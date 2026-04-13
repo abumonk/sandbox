@@ -133,3 +133,7 @@
 [2026-04-13T10:56:33Z] implementer | complete: 1 file changed, import check passes (29 entries), status completed
 [2026-04-13T11:03:38Z] implementer | "spawn: ADV001-T013/T014/T015 implementing"
 [2026-04-13T11:03:38Z] implementer | "step 1/6: read tasks T013/T014/T015, design doc, existing ark_verify.py"
+[2026-04-13T11:06:56Z] implementer | "step 2/6: implemented T013 — added build_pred_registry(), improved cycle detection with path listing, changed _seen from frozenset to tuple"
+[2026-04-13T11:06:57Z] implementer | "step 3/6: implemented T014 — created expression_smt.py with PRIMITIVE_Z3 dict, added PASS_OPAQUE tracking via reset/read_opaque_usage(), updated summary"
+[2026-04-13T11:06:57Z] implementer | "step 4/6: implemented T015 — added difflib import, fuzzy suggestions in apply_stage unknown error with file:line:col support"
+[2026-04-13T11:06:57Z] implementer | "step 5/6: ran tests — 108 passed, 0 failed"

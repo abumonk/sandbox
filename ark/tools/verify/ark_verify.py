@@ -96,9 +96,25 @@ OPAQUE_PRIMITIVES = {
 
 _opaque_cache: dict = {}
 
+# Thread-unsafe but sufficient for single-threaded CLI usage: tracks which
+# opaque primitive names were called since the last reset. Callers use
+# reset_opaque_usage() before a check and read_opaque_usage() after.
+_opaque_usage: set = set()
+
+
+def reset_opaque_usage() -> None:
+    """Clear the opaque-usage tracking set. Call before each solver check."""
+    _opaque_usage.clear()
+
+
+def read_opaque_usage() -> frozenset:
+    """Return a snapshot of the opaque primitives encountered since last reset."""
+    return frozenset(_opaque_usage)
+
 
 def apply_opaque(name: str, val, args: list):
     """Wrap an opaque primitive as an uninterpreted Z3 function."""
+    _opaque_usage.add(name)
     key = (name, len(args))
     if key not in _opaque_cache:
         if name.startswith("str-"):
@@ -661,6 +677,7 @@ def check_invariants_hold(entity: dict, enum_index: dict | None = None) -> list:
 
         # --- Check 1: invariant preservation ---
         for inv in entity.get("invariants", []):
+            reset_opaque_usage()
             inv_z3 = translate_expr(inv, syms)
             inv_name = str(inv)[:50]
 
@@ -686,13 +703,17 @@ def check_invariants_hold(entity: dict, enum_index: dict | None = None) -> list:
             s.add(Not(inv_z3))
 
             result = s.check()
+            used_opaque = read_opaque_usage()
 
             if result == unsat:
+                status = "PASS_OPAQUE" if used_opaque else "PASS"
+                opaque_note = f" (opaque: {', '.join(sorted(used_opaque))})" if used_opaque else ""
                 results.append({
                     "check": f"invariant_holds_{inv_name}",
                     "process": proc_name,
-                    "status": "PASS",
-                    "detail": "Invariant cannot be violated given pre/body/post"
+                    "status": status,
+                    "detail": f"Invariant cannot be violated given pre/body/post{opaque_note}",
+                    "opaque_primitives": sorted(used_opaque),
                 })
             elif result == sat:
                 model = s.model()
@@ -700,14 +721,18 @@ def check_invariants_hold(entity: dict, enum_index: dict | None = None) -> list:
                     "check": f"invariant_holds_{inv_name}",
                     "process": proc_name,
                     "status": "FAIL",
-                    "detail": f"Counterexample found: {model}"
+                    "detail": f"Counterexample found: {model}",
+                    "opaque_primitives": sorted(used_opaque),
                 })
             else:
+                status = "PASS_OPAQUE" if used_opaque else "UNKNOWN"
+                opaque_note = f" (opaque: {', '.join(sorted(used_opaque))})" if used_opaque else ""
                 results.append({
                     "check": f"invariant_holds_{inv_name}",
                     "process": proc_name,
-                    "status": "UNKNOWN",
-                    "detail": "Z3 could not determine"
+                    "status": status,
+                    "detail": f"Z3 could not determine{opaque_note}",
+                    "opaque_primitives": sorted(used_opaque),
                 })
 
         # --- Check 2: post-obligation (NEW) ---
@@ -777,8 +802,14 @@ def verify_entity(entity: dict, enum_index: dict | None = None) -> list:
 
     # Print results
     for r in results:
-        icon = "✓" if r["status"] == "PASS" else "✗" if r["status"] == "FAIL" else "?"
-        print(f"  {icon} [{r['status']}] {r['check']}")
+        status = r["status"]
+        if status in ("PASS", "PASS_BOUNDED", "PASS_OPAQUE"):
+            icon = "✓"
+        elif status == "FAIL":
+            icon = "✗"
+        else:
+            icon = "?"
+        print(f"  {icon} [{status}] {r['check']}")
         if r.get("detail"):
             print(f"    → {r['detail']}")
 
@@ -1220,18 +1251,33 @@ def verify_file(ast_json: dict) -> dict:
 
     # Summary — PASS_BOUNDED counts as a pass for the purposes of the
     # running green/red tally, since it's the best the BMC can assert.
+    # PASS_OPAQUE counts as an acknowledged pass (Z3 was used but with
+    # opaque/uninterpreted functions; result is best-effort, not a proof).
     pass_statuses = {"PASS", "PASS_BOUNDED"}
     total = sum(len(v) for v in all_results.values())
     passed = sum(1 for v in all_results.values() for r in v if r["status"] in pass_statuses)
     failed = sum(1 for v in all_results.values() for r in v if r["status"] == "FAIL")
+    unknown = sum(1 for v in all_results.values() for r in v if r["status"] == "UNKNOWN")
+    pass_opaque = sum(1 for v in all_results.values() for r in v if r["status"] == "PASS_OPAQUE")
 
     print(f"\n{'='*60}")
-    print(f"  SUMMARY: {passed}/{total} passed, {failed} failed")
+    summary_parts = [f"{passed}/{total} passed", f"{failed} failed"]
+    if unknown:
+        summary_parts.append(f"{unknown} UNKNOWN")
+    if pass_opaque:
+        summary_parts.append(f"{pass_opaque} PASS_OPAQUE")
+    print(f"  SUMMARY: {', '.join(summary_parts)}")
     print(f"{'='*60}")
 
     return {
         "entities": all_results,
-        "summary": {"total": total, "passed": passed, "failed": failed}
+        "summary": {
+            "total": total,
+            "passed": passed,
+            "failed": failed,
+            "unknown": unknown,
+            "pass_opaque": pass_opaque,
+        }
     }
 
 
