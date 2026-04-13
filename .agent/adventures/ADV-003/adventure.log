@@ -1,0 +1,3 @@
+[2026-04-11T00:00:00Z] lead | "adventure created: ADV-003 Claude-Code-Game-Studios-style Studio Hierarchy in Ark DSL"
+[2026-04-11T00:00:00Z] lead | "dependency set: depends_on=[ADV-002] (user chose sequential execution)"
+[2026-04-11T00:01:00Z] lead | "concept approved by user (batch approval); held in concept pending ADV-002 completion (sequential order)"
