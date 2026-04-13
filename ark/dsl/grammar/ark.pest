@@ -25,6 +25,8 @@ item = _{
   | island_def
   | bridge_def
   | registry_def
+  | expression_def
+  | predicate_def
   | verify_def
 }
 
@@ -120,6 +122,16 @@ verify_def = { "verify" ~ ident ~ "{" ~ check_stmt* ~ "}" }
 check_stmt = { "check" ~ ident ~ ":" ~ expression }
 
 // ============================================================
+// EXPRESSION & PREDICATE ITEMS
+// ============================================================
+
+expression_def = { "expression" ~ ident ~ "{" ~ expression_body ~ "}" }
+predicate_def  = { "predicate"  ~ ident ~ "{" ~ predicate_body  ~ "}" }
+
+expression_body = { "in:" ~ typed_field_list ~ "out:" ~ type_expr ~ "chain:" ~ expression }
+predicate_body  = { "in:" ~ typed_field_list ~ "check:" ~ expression }
+
+// ============================================================
 // STATEMENTS
 // ============================================================
 
@@ -142,7 +154,10 @@ condition_tail = _{ process_block | assignment }
 // EXPRESSIONS — precedence climbing, left-folded in the transformer
 // ============================================================
 
-expression = { or_expr }
+expression = { pipe_expr }
+pipe_expr  = { or_expr ~ ("|>" ~ pipe_stage)* }
+pipe_stage    = { pipe_fn_ident ~ call_tail? }
+pipe_fn_ident = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* ~ ("-" ~ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")*)* }
 
 or_expr  = { and_expr ~ ("or" ~ and_expr)* }
 and_expr = { cmp_expr ~ ("and" ~ cmp_expr)* }
@@ -163,12 +178,16 @@ temporal_op = @{ "□" | "◇" | "○" | "¬" | "∧" | "∨" }
 
 atom = _{
     paren_expr
+  | prop_ref
   | array_expr
   | for_all_expr
   | number_expr
   | string_expr
   | true_expr
   | false_expr
+  | var_ref
+  | idx_ref
+  | nested_ref
   | path_call_expr
 }
 
@@ -180,6 +199,12 @@ true_expr   = { "true" }
 false_expr  = { "false" }
 
 for_all_expr = { "for_all" ~ ident ~ "as" ~ ident ~ ("where" ~ expression)? ~ ":" ~ (process_block | expression) }
+
+// Parameter references (Expressif-style sigils)
+var_ref    = ${ "@" ~ ident }
+prop_ref   = { "[" ~ ident ~ ("." ~ ident)+ ~ "]" }
+idx_ref    = ${ "#" ~ ident ~ "[" ~ number ~ "]" }
+nested_ref = { "{" ~ expression ~ "}" }
 
 // path_call_expr covers:
 //   foo                 — bare ident

@@ -1,9 +1,9 @@
 ---
 id: ADV-001
 title: Expressif-style Expression & Predication System in Ark DSL
-state: review
+state: active
 created: 2026-04-11T00:00:00Z
-updated: 2026-04-11T00:30:00Z
+updated: 2026-04-11T00:35:00Z
 approved: 2026-04-11T00:01:00Z
 tasks:
   - ADV001-T001

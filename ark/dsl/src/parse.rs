@@ -839,6 +839,15 @@ fn expr_from_pair(pair: Pair<Rule>) -> Result<Expr> {
                 .ok_or_else(|| anyhow!("expression empty"))?;
             expr_from_pair(inner)
         }
+        Rule::pipe_expr => {
+            // Passthrough: T003/T004 will add full pipe handling.
+            // For now, just recurse into the first child (the or_expr).
+            let inner = pair
+                .into_inner()
+                .next()
+                .ok_or_else(|| anyhow!("pipe_expr empty"))?;
+            expr_from_pair(inner)
+        }
         Rule::or_expr => fold_binop_token(pair, "or"),
         Rule::and_expr => fold_binop_token(pair, "and"),
         Rule::cmp_expr => fold_binop_with_op(pair, Rule::cmp_op),

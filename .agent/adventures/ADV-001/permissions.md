@@ -1,8 +1,8 @@
 ---
 adventure_id: ADV-001
-status: pending_approval
+status: approved
 created: 2026-04-11T00:15:00Z
-approved: null
+approved: 2026-04-11T00:35:00Z
 passes_completed: 4
 validation_gaps: 0
 ---

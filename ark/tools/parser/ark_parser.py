@@ -255,6 +255,28 @@ class EnumDef:
     description: Optional[str] = None
 
 @dataclass
+class ExpressionDef:
+    kind: str = "expression"
+    name: str = ""
+    inputs: list = field(default_factory=list)    # List of typed_field dicts
+    output: dict = field(default_factory=dict)     # type_expr dict
+    chain: dict = field(default_factory=dict)      # expr dict (pipe or single atom)
+    description: Optional[str] = None
+
+@dataclass
+class PredicateDef:
+    kind: str = "predicate"
+    name: str = ""
+    inputs: list = field(default_factory=list)    # List of typed_field dicts
+    check: dict = field(default_factory=dict)      # expr dict (must type-check to Bool)
+    description: Optional[str] = None
+
+@dataclass
+class PipeStage:
+    name: str = ""          # kebab-case allowed, e.g. "text-to-lower"
+    args: list = field(default_factory=list)  # extra args beyond piped value
+
+@dataclass
 class ArkFile:
     imports: list = field(default_factory=list)
     items: list = field(default_factory=list)
@@ -268,6 +290,9 @@ class ArkFile:
     # Per-island nested classes: island_name -> {class_name -> EntityDef}.
     # Separate map so top-level and island-scoped names can't collide.
     island_classes: dict = field(default_factory=dict)
+    # Expression and predicate indices: name -> index into items list.
+    expression_index: dict = field(default_factory=dict)  # name -> int index
+    predicate_index: dict = field(default_factory=dict)   # name -> int index
 
     def instances_of(self, class_name: str) -> list:
         """Return the list of instances declared for `class_name`, or []."""
@@ -395,6 +420,38 @@ class ArkTransformer(Transformer):
         if len(rest) > 1:
             cond = rest[0]
         return {"expr": "for_all", "type": ty, "var": var, "condition": cond, "body": body}
+
+    # --- Pipe expressions ---
+
+    def pipe_expr(self, items):
+        if len(items) == 1:
+            return items[0]  # no pipe, pass through
+        head = items[0]
+        stages = [{"name": s.name, "args": s.args} for s in items[1:]]
+        return {"expr": "pipe", "head": head, "stages": stages}
+
+    def pipe_stage(self, items):
+        name = items[0]  # string from pipe_fn_ident
+        args = items[1] if len(items) > 1 else []
+        return PipeStage(name=name, args=args)
+
+    def pipe_fn_ident(self, items):
+        return "-".join(str(i) for i in items)
+
+    # --- Param refs ---
+
+    def var_ref(self, items):
+        return {"expr": "param_ref", "ref_kind": "var", "name": str(items[0])}
+
+    def prop_ref(self, items):
+        parts = [str(i) for i in items]
+        return {"expr": "param_ref", "ref_kind": "prop", "parts": parts}
+
+    def idx_ref(self, items):
+        return {"expr": "param_ref", "ref_kind": "idx", "name": str(items[0]), "index": items[1]}
+
+    def nested_ref(self, items):
+        return {"expr": "param_ref", "ref_kind": "nested", "inner": items[0]}
 
     # --- Paths ---
 
@@ -797,6 +854,35 @@ class ArkTransformer(Transformer):
     def inline_enum_type(self, items):
         return {"type": "inline_enum", "values": items[0]}
 
+    # --- Expression / Predicate definitions ---
+
+    def expression_body(self, items):
+        # items: [typed_field_list, type_expr, chain_expr]
+        return {"inputs": items[0], "output": items[1], "chain": items[2]}
+
+    def expression_def(self, items):
+        name = str(items[0])
+        body = items[1]
+        return ExpressionDef(
+            name=name,
+            inputs=body["inputs"],
+            output=body["output"],
+            chain=body["chain"],
+        )
+
+    def predicate_body(self, items):
+        # items: [typed_field_list, check_expr]
+        return {"inputs": items[0], "check": items[1]}
+
+    def predicate_def(self, items):
+        name = str(items[0])
+        body = items[1]
+        return PredicateDef(
+            name=name,
+            inputs=body["inputs"],
+            check=body["check"],
+        )
+
     # --- Import ---
 
     def item(self, items):
@@ -818,7 +904,8 @@ class ArkTransformer(Transformer):
                 imports.append(item)
             elif isinstance(item, (EntityDef, InstanceDef, IslandDef,
                                    BridgeDef, RegistryDef, VerifyDef,
-                                   PrimitiveDef, StructDef, EnumDef)):
+                                   PrimitiveDef, StructDef, EnumDef,
+                                   ExpressionDef, PredicateDef)):
                 ark_items.append(item)
         return ArkFile(imports=imports, items=ark_items)
 
@@ -935,7 +1022,9 @@ def _build_indices(ark_file: ArkFile) -> ArkFile:
     classes: dict = {}
     instances: dict = {}
     island_classes: dict = {}
-    for item in ark_file.items:
+    expression_index: dict = {}
+    predicate_index: dict = {}
+    for idx, item in enumerate(ark_file.items):
         if isinstance(item, EntityDef) and item.kind == "class":
             classes[item.name] = item
         elif isinstance(item, InstanceDef):
@@ -947,9 +1036,15 @@ def _build_indices(ark_file: ArkFile) -> ArkFile:
                     nested[nested_item.name] = nested_item
             if nested:
                 island_classes[item.name] = nested
+        elif isinstance(item, ExpressionDef):
+            expression_index[item.name] = idx
+        elif isinstance(item, PredicateDef):
+            predicate_index[item.name] = idx
     ark_file.classes = classes
     ark_file.instances = instances
     ark_file.island_classes = island_classes
+    ark_file.expression_index = expression_index
+    ark_file.predicate_index = predicate_index
     return ark_file
 
 

@@ -13,3 +13,52 @@
 [2026-04-11T00:27:00Z] adventure-planner | "step 8/9: permission analysis - 4 passes, 30 file + 18 shell requests, 0 gaps"
 [2026-04-11T00:28:00Z] adventure-planner | "step 9/9: custom roles generated - 3 roles (coder, qa-tester, planner)"
 [2026-04-11T00:30:00Z] adventure-planner | "complete: manifest updated, state -> review"
+[2026-04-11T00:35:00Z] lead | "checkpoint 2 approved by user"
+[2026-04-11T00:35:00Z] lead | "tasks created: ADV001-T001 through ADV001-T032 (32 tasks)"
+[2026-04-11T00:35:00Z] lead | "permissions approved"
+[2026-04-11T00:35:00Z] lead | "state: review -> active"
+[2026-04-11T00:35:00Z] lead | "spawning planner agents for all tasks"
+[2026-04-13T00:00:00Z] planner | "spawn: ADV001-T005 planning"
+[2026-04-13T00:00:01Z] planner | "step 1/4: read task, config, knowledge base"
+[2026-04-13T00:00:02Z] planner | "step 2/4: explored codebase — ark_grammar.lark (251 lines), ark.pest (239 lines), ark_parser.py (1008 lines), 6 designs analyzed"
+[2026-04-13T00:00:03Z] planner | "step 3/4: wrote design doc — 1 target file identified (ark_grammar.lark)"
+[2026-04-13T00:00:04Z] planner | "step 4/4: updated task — 2 acceptance criteria, stage -> implementing"
+[2026-04-13T00:00:05Z] planner | "complete: design ready, 6 grammar changes mapped with line-level placement"
+[2026-04-13T00:01:00Z] planner | "spawn: ADV001-T001 planning"
+[2026-04-13T00:01:01Z] planner | "step 1/4: read task, config, knowledge base"
+[2026-04-13T00:01:02Z] planner | "step 2/4: explored codebase — 6 designs + 14 test files analyzed"
+[2026-04-13T00:01:03Z] planner | "step 3/4: wrote test-strategy.md — 30 TCs mapped to ~40 test functions"
+[2026-04-13T00:01:04Z] planner | "step 4/4: updated task — status completed"
+[2026-04-13T00:01:05Z] planner | "complete: test strategy ready, 30 TCs mapped across 5 subsystems"
+[2026-04-13T10:06:59Z] implementer | spawn: ADV001-T005 implementing
+[2026-04-13T10:06:59Z] implementer | step 1/5: read task, design, config
+[2026-04-13T10:10:00Z] planner | "spawn: ADV001-T002 planning"
+[2026-04-13T10:10:01Z] planner | "step 1/4: read task, config, knowledge base"
+[2026-04-13T10:10:02Z] planner | "step 2/4: explored codebase — 8 files analyzed (ark.pest 239 lines, 6 designs, schemas, test strategy)"
+[2026-04-13T10:10:03Z] planner | "step 3/4: wrote design doc — 1 target file identified (ark.pest)"
+[2026-04-13T10:10:04Z] planner | "step 4/4: updated task — 3 acceptance criteria, stage -> implementing"
+[2026-04-13T10:10:05Z] planner | "complete: design ready, 10 pest rules with placement, precedence chain wired, collision analysis done"
+[2026-04-13T10:15:00Z] planner | "spawn: ADV001-T006 planning"
+[2026-04-13T10:15:01Z] planner | "step 1/4: read task, config, knowledge base"
+[2026-04-13T10:15:02Z] planner | "step 2/4: explored codebase — 12 files analyzed (ark_parser.py, ark_grammar.lark, lib.rs, parse.rs, 6 designs, schemas, tests)"
+[2026-04-13T10:15:03Z] planner | "step 3/4: wrote design doc — 1 target file identified (ark_parser.py)"
+[2026-04-13T10:15:04Z] planner | "step 4/4: updated task — 7 acceptance criteria, stage -> implementing"
+[2026-04-13T10:15:05Z] planner | "complete: design ready, 3 dataclasses + 10 transformer methods + 3 existing method updates"
+[2026-04-13T10:10:01Z] implementer | "spawn: ADV001-T002 implementing"
+[2026-04-13T10:10:08Z] implementer | "step 1/5: read task, design, config"
+[2026-04-13T10:10:40Z] implementer | "step 2/5: implemented 10 grammar rules — 1 file modified"
+[2026-04-13T10:16:07Z] implementer | spawn: ADV001-T006 implementing
+[2026-04-13T10:16:07Z] implementer | step 1/5: read task, design, config, ark_parser.py
+[2026-04-13T12:00:00Z] planner | "spawn: ADV001-T003 planning"
+[2026-04-13T12:00:01Z] planner | "step 1/4: read task, config, knowledge base"
+[2026-04-13T12:00:02Z] planner | "step 2/4: explored codebase -- 6 files analyzed (lib.rs, parse.rs, ark.pest, 2 designs, schemas)"
+[2026-04-13T12:00:03Z] planner | "step 3/4: wrote design doc -- 2 target files identified"
+[2026-04-13T12:00:04Z] planner | "step 4/4: updated task -- 3 acceptance criteria, stage -> implementing"
+[2026-04-13T12:00:05Z] planner | "complete: design ready, 5 new types + 3 extended types across lib.rs and parse.rs"
+[2026-04-13T10:17:26Z] implementer | step 2/5: added 3 dataclasses (ExpressionDef, PredicateDef, PipeStage) and 2 ArkFile index fields — 1 file modified
+[2026-04-13T10:17:26Z] implementer | step 3/5: added 11 transformer methods (pipe_expr, pipe_stage, pipe_fn_ident, var_ref, prop_ref, idx_ref, nested_ref, expression_body, expression_def, predicate_body, predicate_def) + updated start() and _build_indices()
+[2026-04-13T10:17:26Z] implementer | step 4/5: ran smoke test (python ark.py parse specs/test_minimal.ark) — pass
+[2026-04-13T10:17:26Z] implementer | step 5/5: ran tests (python -m pytest tests/ -q) — 68 passed, 0 failed
+[2026-04-13T10:17:47Z] implementer | complete: 1 file changed (ark_parser.py), 68 tests passing, status done
+[2026-04-13T10:17:49Z] implementer | spawn: ADV001-T003 implementing
+[2026-04-13T10:17:49Z] implementer | step 1/6: read task, design, config, lib.rs, parse.rs

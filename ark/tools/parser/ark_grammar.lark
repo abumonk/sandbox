@@ -19,6 +19,8 @@ item: abstraction_def
     | primitive_def
     | struct_def
     | enum_def
+    | expression_def
+    | predicate_def
 
 // ============================================================
 // FOUR PRIMITIVES
@@ -122,6 +124,16 @@ verify_def: "verify" IDENT "{" check_stmt* "}"
 check_stmt: "check" IDENT ":" expr
 
 // ============================================================
+// EXPRESSION & PREDICATE DEFINITIONS
+// ============================================================
+
+expression_def: "expression" IDENT "{" expression_body "}"
+predicate_def: "predicate" IDENT "{" predicate_body "}"
+
+expression_body: "in:" typed_field_list "out:" type_expr "chain:" expr
+predicate_body: "in:" typed_field_list "check:" expr
+
+// ============================================================
 // STDLIB TYPE DECLARATIONS
 // ============================================================
 
@@ -155,7 +167,12 @@ assignment: dotted_path_or_ident "=" expr
 // EXPRESSIONS
 // ============================================================
 
-?expr: or_expr
+?expr: pipe_expr
+
+?pipe_expr: or_expr ("|>" pipe_stage)*
+pipe_stage: pipe_fn_ident "(" expr_list? ")"
+          | pipe_fn_ident
+pipe_fn_ident: IDENT ("-" IDENT)*
 
 ?or_expr: and_expr ("or" and_expr)*
 ?and_expr: cmp_expr ("and" cmp_expr)*
@@ -170,6 +187,10 @@ assignment: dotted_path_or_ident "=" expr
 ?atom: "true"                                 -> true_expr
      | "false"                                -> false_expr
      | "$data" IDENT                          -> data_ref_expr
+     | var_ref
+     | prop_ref
+     | idx_ref
+     | nested_ref
      | fn_call
      | dotted_path                            -> path_expr
      | IDENT                                  -> ident_expr
@@ -178,6 +199,11 @@ assignment: dotted_path_or_ident "=" expr
      | "(" expr ")"                           -> paren_expr
      | "[" expr_list? "]"                     -> array_expr
      | for_all_expr
+
+var_ref: "@" IDENT
+prop_ref: "[" IDENT ("." IDENT)+ "]"
+idx_ref: "#" IDENT "[" NUMBER "]"
+nested_ref: "{" expr "}"
 
 fn_call: dotted_path_or_ident "(" expr_list? ")"
 
