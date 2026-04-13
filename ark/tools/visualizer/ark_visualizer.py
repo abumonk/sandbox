@@ -2,6 +2,7 @@
 ARK Visualizer
 Генерирует интерактивную HTML-визуализацию графа системы.
 Поддерживает LOD-переключение (zoom → detail level).
+Поддерживает org-chart для studio/role items с tier-based layering.
 """
 
 import json
@@ -9,8 +10,12 @@ import sys
 from pathlib import Path
 
 
+# ============================================================
+# ENTITY GRAPH DATA EXTRACTION
+# ============================================================
+
 def generate_graph_data(ast_json: dict) -> dict:
-    """Extract nodes and edges for d3 visualization"""
+    """Extract nodes and edges for d3 visualization, including orgchart data."""
     nodes = []
     links = []
     groups = {}  # island_name → [entity_names]
@@ -77,13 +82,147 @@ def generate_graph_data(ast_json: dict) -> dict:
                 ename = entry.get("name", "?")
                 links.append({"source": "registry", "target": ename, "kind": "registers"})
 
-    return {"nodes": nodes, "links": links, "groups": groups}
+    orgchart = extract_orgchart_data(ast_json)
 
+    return {"nodes": nodes, "links": links, "groups": groups, "orgchart": orgchart}
+
+
+# ============================================================
+# ORG-CHART DATA EXTRACTION
+# ============================================================
+
+# Tier name → numeric level mapping
+TIER_NAME_TO_LEVEL = {
+    "director": 1, "directors": 1,
+    "lead": 2, "leads": 2,
+    "specialist": 3, "specialists": 3,
+    "contributor": 4, "contributors": 4,
+}
+
+# Tier level → display info
+TIER_DISPLAY = {
+    1: {"name": "Directors",    "color": "gold"},
+    2: {"name": "Leads",        "color": "steelblue"},
+    3: {"name": "Specialists",  "color": "lightgreen"},
+    4: {"name": "Contributors", "color": "#c8a0e8"},
+}
+
+
+def _resolve_tier_level(tier_val) -> int:
+    """Convert tier value (int, str name, or AST expr dict) to numeric level."""
+    if tier_val is None:
+        return 3  # Default to specialist level
+    # AST serializes numbers as {"expr": "number", "value": N}
+    if isinstance(tier_val, dict):
+        v = tier_val.get("value")
+        if v is not None:
+            return _resolve_tier_level(v)
+        # Try name field for ident expressions
+        name = tier_val.get("name", "")
+        return TIER_NAME_TO_LEVEL.get(str(name).lower(), 3)
+    if isinstance(tier_val, int):
+        return tier_val
+    if isinstance(tier_val, float):
+        return int(tier_val)
+    s = str(tier_val).lower().strip()
+    return TIER_NAME_TO_LEVEL.get(s, 3)
+
+
+def extract_orgchart_data(ast_json: dict) -> dict:
+    """
+    Extract studio/role items from AST and build orgchart data shape:
+    {
+      "studios": [...],
+      "roles": [...],
+      "tiers": {...},   # level -> {name, color, roles:[...]}
+      "edges": [...]    # escalation edges
+    }
+    Returns empty dict if no studio/role items found.
+    """
+    items = ast_json.get("items", [])
+    roles = [i for i in items if i.get("kind") == "role"]
+    studios = [i for i in items if i.get("kind") == "studio"]
+
+    if not roles and not studios:
+        return {}
+
+    # Build tier map: level -> list of role names
+    tier_roles: dict = {}  # level -> [role_dict]
+    edges = []
+
+    for role in roles:
+        role_name = role.get("name", "?")
+        tier_val = role.get("tier")
+        level = _resolve_tier_level(tier_val)
+
+        tier_display = TIER_DISPLAY.get(level, {"name": f"Tier {level}", "color": "#888"})
+
+        role_entry = {
+            "name": role_name,
+            "tier": level,
+            "tier_name": tier_display["name"],
+            "color": tier_display["color"],
+            "escalates_to": role.get("escalates_to"),
+            "responsibilities": role.get("responsibilities", []),
+            "skills": role.get("skills", []),
+            "tools": role.get("tools", []),
+            "description": role.get("description", ""),
+        }
+
+        if level not in tier_roles:
+            tier_roles[level] = []
+        tier_roles[level].append(role_entry)
+
+        # Build escalation edge
+        if role.get("escalates_to"):
+            edges.append({
+                "from": role_name,
+                "to": role.get("escalates_to"),
+                "type": "escalation"
+            })
+
+    # Build tiers list (sorted by level)
+    tiers = {}
+    for level in sorted(tier_roles.keys()):
+        tier_display = TIER_DISPLAY.get(level, {"name": f"Tier {level}", "color": "#888"})
+        tiers[str(level)] = {
+            "level": level,
+            "name": tier_display["name"],
+            "color": tier_display["color"],
+            "roles": tier_roles[level],
+        }
+
+    # Build studio summary list
+    studio_list = []
+    for s in studios:
+        studio_list.append({
+            "name": s.get("name", "?"),
+            "contains": s.get("contains", []),
+            "description": s.get("description", ""),
+        })
+
+    return {
+        "studios": studio_list,
+        "roles": [r for level_roles in tier_roles.values() for r in level_roles],
+        "tiers": tiers,
+        "edges": edges,
+    }
+
+
+# ============================================================
+# HTML GENERATION
+# ============================================================
 
 def generate_html(graph_data: dict, title: str = "ARK System Graph") -> str:
     """Generate self-contained interactive HTML visualization"""
 
     graph_json = json.dumps(graph_data)
+    has_orgchart = bool(graph_data.get("orgchart"))
+
+    orgchart_toggle_btn = ""
+    if has_orgchart:
+        orgchart_toggle_btn = """
+    <button class="lod-btn" id="toggle-orgchart" onclick="toggleView()">Org-Chart</button>"""
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -133,6 +272,7 @@ def generate_html(graph_data: dict, title: str = "ARK System Graph") -> str:
   }}
   .lod-btn:hover {{ background: rgba(122,170,255,0.2); }}
   .lod-btn.active {{ background: rgba(122,170,255,0.3); border-color: #7af; }}
+  .lod-btn.view-active {{ background: rgba(255,200,80,0.2); border-color: #fc8; color: #fc8; }}
 
   #stats {{
     margin-left: auto;
@@ -250,23 +390,112 @@ def generate_html(graph_data: dict, title: str = "ARK System Graph") -> str:
   .tag.in {{ color: #8cf; }}
   .tag.out {{ color: #fc8; }}
   .tag.data {{ color: #c8f; }}
+
+  /* Org-chart tier bands */
+  .tier-band {{
+    fill: rgba(255,255,255,0.02);
+    stroke: rgba(255,255,255,0.05);
+    stroke-width: 1;
+  }}
+  .tier-label {{
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    opacity: 0.4;
+    pointer-events: none;
+  }}
+
+  /* Org-chart escalation links */
+  .link.escalation {{
+    stroke: #f8a;
+    stroke-width: 2;
+    stroke-dasharray: none;
+    opacity: 0.8;
+  }}
+
+  /* Org-chart role node */
+  .role-node-body {{
+    rx: 20; ry: 20;
+    stroke-width: 2;
+  }}
+  .role-node-group:hover .role-node-body {{
+    stroke-width: 3;
+    filter: drop-shadow(0 0 10px rgba(255,255,200,0.4));
+  }}
+  .role-node-name {{
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 600;
+    font-size: 12px;
+    fill: #0a0a0f;
+    pointer-events: none;
+    dominant-baseline: middle;
+    text-anchor: middle;
+  }}
+  .role-node-tier {{
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    fill: rgba(10,10,15,0.6);
+    pointer-events: none;
+    dominant-baseline: middle;
+    text-anchor: middle;
+  }}
+
+  /* Org-chart legend */
+  #orgchart-legend {{
+    position: fixed; left: 20px; bottom: 30px;
+    background: rgba(15,15,25,0.92);
+    border: 1px solid rgba(122,170,255,0.2);
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 11px;
+    display: none;
+    z-index: 100;
+    backdrop-filter: blur(10px);
+  }}
+  #orgchart-legend.visible {{ display: block; }}
+  #orgchart-legend h4 {{
+    color: #556; font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+  }}
+  .legend-item {{
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 4px;
+  }}
+  .legend-swatch {{
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    border: 1.5px solid rgba(255,255,255,0.3);
+    flex-shrink: 0;
+  }}
+  .legend-text {{
+    color: #aaa;
+  }}
 </style>
 </head>
 <body>
 
 <div id="header">
-  <h1>⬡ ARK</h1>
-  <div class="lod-controls">
+  <h1>ARK</h1>
+  <div class="lod-controls" id="entity-lod-controls">
     <button class="lod-btn active" onclick="setLOD(1)">LOD 1 — Overview</button>
     <button class="lod-btn" onclick="setLOD(2)">LOD 2 — Ports</button>
     <button class="lod-btn" onclick="setLOD(3)">LOD 3 — Details</button>
-  </div>
+  </div>{orgchart_toggle_btn}
   <div id="stats"></div>
 </div>
 
 <div id="inspector">
   <h3 id="insp-name">—</h3>
   <div id="insp-body"></div>
+</div>
+
+<div id="orgchart-legend">
+  <h4>Tier Legend</h4>
+  <div id="legend-items"></div>
 </div>
 
 <div id="canvas">
@@ -277,6 +506,7 @@ def generate_html(graph_data: dict, title: str = "ARK System Graph") -> str:
 const DATA = {graph_json};
 let currentLOD = 1;
 let selectedNode = null;
+let currentView = 'entity'; // 'entity' | 'orgchart'
 
 // ============================================================
 // COLOR SCHEME
@@ -366,7 +596,7 @@ const layout = new ForceLayout(DATA.nodes, DATA.links);
 layout.tick(200);
 
 // ============================================================
-// RENDERING
+// ENTITY GRAPH RENDERING
 // ============================================================
 
 function getNodeSize(node) {{
@@ -381,7 +611,7 @@ function getNodeSize(node) {{
   return {{ w: 200, h: 60 + fields * 14 }};
 }}
 
-function render() {{
+function renderEntityGraph() {{
   svg.innerHTML = '';
 
   // Defs for arrows
@@ -507,16 +737,314 @@ function render() {{
     `${{DATA.nodes.length}} nodes · ${{DATA.links.length}} edges · LOD ${{currentLOD}}`;
 }}
 
+// Alias for backwards compatibility
+function render() {{ renderEntityGraph(); }}
+
 // ============================================================
-// INTERACTION
+// ORG-CHART RENDERING
+// ============================================================
+
+function renderOrgChart() {{
+  svg.innerHTML = '';
+  const oc = DATA.orgchart;
+  if (!oc || !oc.roles || oc.roles.length === 0) {{
+    const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    txt.setAttribute('x', width / 2); txt.setAttribute('y', height / 2);
+    txt.setAttribute('fill', '#556'); txt.setAttribute('text-anchor', 'middle');
+    txt.textContent = 'No studio/role data in this .ark file';
+    svg.appendChild(txt);
+    return;
+  }}
+
+  const tiers = oc.tiers || {{}};
+  const tierLevels = Object.keys(tiers).map(Number).sort();
+  const numTiers = tierLevels.length;
+
+  if (numTiers === 0) return;
+
+  // Layout: divide vertical space among tiers
+  const topPad = 80;
+  const bottomPad = 60;
+  const usableH = height - topPad - bottomPad;
+  const bandH = usableH / numTiers;
+
+  // Build a position map for role nodes
+  const rolePos = {{}};  // roleName -> {{x, y, color, ...data}}
+
+  // Defs for arrows
+  const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+  defs.innerHTML = `
+    <marker id="esc-arrow" viewBox="0 0 10 10" refX="9" refY="5"
+      markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#f8a" opacity="0.9"/>
+    </marker>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>`;
+  svg.appendChild(defs);
+
+  // Draw tier bands + roles
+  tierLevels.forEach((level, ti) => {{
+    const tier = tiers[String(level)];
+    const roles = tier.roles || [];
+    const bandY = topPad + ti * bandH;
+
+    // Background band
+    const band = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    band.setAttribute('x', 0);
+    band.setAttribute('y', bandY);
+    band.setAttribute('width', width);
+    band.setAttribute('height', bandH);
+    band.setAttribute('class', 'tier-band');
+    svg.appendChild(band);
+
+    // Tier label (left side)
+    const tlabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    tlabel.setAttribute('x', 24);
+    tlabel.setAttribute('y', bandY + bandH / 2);
+    tlabel.setAttribute('class', 'tier-label');
+    tlabel.setAttribute('fill', tier.color);
+    tlabel.setAttribute('dominant-baseline', 'middle');
+    tlabel.textContent = tier.name;
+    svg.appendChild(tlabel);
+
+    // LOD 0 (zoomed-out style — low detail): show tier summary only
+    if (currentLOD === 1 && roles.length > 4) {{
+      // Compact: show count pill instead of all nodes
+      const pw = 160, ph = 38;
+      const px = width / 2 - pw / 2, py = bandY + bandH / 2 - ph / 2;
+      const pill = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      pill.setAttribute('x', px); pill.setAttribute('y', py);
+      pill.setAttribute('width', pw); pill.setAttribute('height', ph);
+      pill.setAttribute('rx', ph / 2); pill.setAttribute('ry', ph / 2);
+      pill.setAttribute('fill', tier.color); pill.setAttribute('opacity', '0.15');
+      pill.setAttribute('stroke', tier.color); pill.setAttribute('stroke-width', '1.5');
+      svg.appendChild(pill);
+      const ptxt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      ptxt.setAttribute('x', px + pw / 2); ptxt.setAttribute('y', py + ph / 2 + 1);
+      ptxt.setAttribute('fill', tier.color);
+      ptxt.setAttribute('font-family', "'Space Grotesk', sans-serif");
+      ptxt.setAttribute('font-size', '12'); ptxt.setAttribute('font-weight', '600');
+      ptxt.setAttribute('text-anchor', 'middle'); ptxt.setAttribute('dominant-baseline', 'middle');
+      ptxt.textContent = `${{roles.length}} ${{tier.name}}`;
+      svg.appendChild(ptxt);
+      // Still record approximate center positions for edge drawing
+      roles.forEach((role, ri) => {{
+        rolePos[role.name] = {{ x: width / 2, y: bandY + bandH / 2, color: tier.color, ...role }};
+      }});
+      return;
+    }}
+
+    // LOD 1+ (medium+): draw individual role nodes
+    const nodeW = 130, nodeH = 44;
+    const spacing = Math.max(nodeW + 20, (width - 160) / Math.max(roles.length, 1));
+    const totalW = roles.length * spacing;
+    const startX = width / 2 - totalW / 2 + spacing / 2;
+
+    roles.forEach((role, ri) => {{
+      const cx = startX + ri * spacing;
+      const cy = bandY + bandH / 2;
+
+      rolePos[role.name] = {{ x: cx, y: cy, color: tier.color, ...role }};
+
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      g.setAttribute('class', 'node-group role-node-group');
+      g.onclick = () => selectRoleNode(role);
+
+      // Node background ellipse
+      const ellipse = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
+      ellipse.setAttribute('cx', cx); ellipse.setAttribute('cy', cy);
+      ellipse.setAttribute('rx', nodeW / 2); ellipse.setAttribute('ry', nodeH / 2);
+      ellipse.setAttribute('fill', tier.color);
+      ellipse.setAttribute('fill-opacity', currentLOD >= 2 ? '0.25' : '0.18');
+      ellipse.setAttribute('stroke', tier.color);
+      ellipse.setAttribute('stroke-width', '2');
+      ellipse.setAttribute('class', 'role-node-body');
+      g.appendChild(ellipse);
+
+      // Role name
+      const nameEl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      nameEl.setAttribute('x', cx); nameEl.setAttribute('y', cy - (currentLOD >= 2 ? 7 : 0));
+      nameEl.setAttribute('class', 'role-node-name');
+      nameEl.setAttribute('fill', tier.color);
+      nameEl.textContent = role.name;
+      g.appendChild(nameEl);
+
+      // LOD 2+: show tier name label inside node
+      if (currentLOD >= 2) {{
+        const tierEl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        tierEl.setAttribute('x', cx); tierEl.setAttribute('y', cy + 9);
+        tierEl.setAttribute('class', 'role-node-tier');
+        tierEl.setAttribute('fill', tier.color);
+        tierEl.setAttribute('opacity', '0.7');
+        tierEl.textContent = tier.name.slice(0, -1);  // singular
+        g.appendChild(tierEl);
+      }}
+
+      // LOD 3: show responsibilities count badge
+      if (currentLOD >= 3 && (role.responsibilities?.length || role.skills?.length)) {{
+        const respCount = role.responsibilities?.length || 0;
+        const skillCount = role.skills?.length || 0;
+        const badge = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        badge.setAttribute('x', cx + nodeW / 2 - 4);
+        badge.setAttribute('y', cy - nodeH / 2 + 4);
+        badge.setAttribute('font-family', "'JetBrains Mono', monospace");
+        badge.setAttribute('font-size', '8');
+        badge.setAttribute('fill', tier.color);
+        badge.setAttribute('text-anchor', 'end');
+        badge.setAttribute('dominant-baseline', 'hanging');
+        badge.textContent = `r:${{respCount}} s:${{skillCount}}`;
+        g.appendChild(badge);
+      }}
+
+      // Escalation badge (arrow indicator)
+      if (role.escalates_to) {{
+        const esc = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        esc.setAttribute('x', cx); esc.setAttribute('y', cy - nodeH / 2 - 8);
+        esc.setAttribute('font-family', "'JetBrains Mono', monospace");
+        esc.setAttribute('font-size', '9');
+        esc.setAttribute('fill', '#f8a');
+        esc.setAttribute('text-anchor', 'middle');
+        esc.textContent = `-> ${{role.escalates_to}}`;
+        g.appendChild(esc);
+      }}
+
+      svg.appendChild(g);
+    }});
+  }});
+
+  // Draw escalation edges on top
+  const edgeGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  for (const edge of (oc.edges || [])) {{
+    const src = rolePos[edge.from];
+    const tgt = rolePos[edge.to];
+    if (!src || !tgt) continue;
+
+    // Draw curved path upward
+    const dx = tgt.x - src.x;
+    const dy = tgt.y - src.y;
+    const cx1 = src.x + dx * 0.2;
+    const cy1 = src.y + dy * 0.7;
+    const cx2 = tgt.x - dx * 0.2;
+    const cy2 = tgt.y - dy * 0.3;
+
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', `M ${{src.x}} ${{src.y}} C ${{cx1}} ${{cy1}}, ${{cx2}} ${{cy2}}, ${{tgt.x}} ${{tgt.y}}`);
+    path.setAttribute('class', 'link escalation');
+    path.setAttribute('stroke', '#f8a');
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke-width', '1.8');
+    path.setAttribute('marker-end', 'url(#esc-arrow)');
+    edgeGroup.appendChild(path);
+  }}
+  svg.appendChild(edgeGroup);
+
+  // Build legend
+  buildOrgChartLegend(tiers, tierLevels);
+
+  // Stats
+  const roleCount = oc.roles?.length || 0;
+  const edgeCount = oc.edges?.length || 0;
+  const studioCount = oc.studios?.length || 0;
+  document.getElementById('stats').textContent =
+    `${{studioCount}} studios · ${{roleCount}} roles · ${{edgeCount}} escalations · LOD ${{currentLOD}}`;
+}}
+
+function buildOrgChartLegend(tiers, tierLevels) {{
+  const legend = document.getElementById('orgchart-legend');
+  const items = document.getElementById('legend-items');
+  items.innerHTML = '';
+  tierLevels.forEach(level => {{
+    const tier = tiers[String(level)];
+    const div = document.createElement('div');
+    div.className = 'legend-item';
+    div.innerHTML = `
+      <div class="legend-swatch" style="background:${{tier.color}}; border-color:${{tier.color}}"></div>
+      <span class="legend-text">${{tier.name}}</span>`;
+    items.appendChild(div);
+  }});
+  legend.classList.add('visible');
+}}
+
+// ============================================================
+// INTERACTION — ORG-CHART
+// ============================================================
+
+function selectRoleNode(role) {{
+  const insp = document.getElementById('inspector');
+  insp.classList.add('visible');
+  document.getElementById('insp-name').textContent = `role: ${{role.name}}`;
+
+  let html = `<div class="inspector-section"><h4>Tier</h4>
+    <span class="tag" style="color:${{role.color}}">${{role.tier_name}}</span></div>`;
+
+  if (role.description) {{
+    html += `<div class="inspector-section"><h4>Description</h4>${{role.description}}</div>`;
+  }}
+  if (role.escalates_to) {{
+    html += `<div class="inspector-section"><h4>Escalates To</h4>
+      <span class="tag" style="color:#f8a">${{role.escalates_to}}</span></div>`;
+  }}
+  if (role.responsibilities?.length) {{
+    html += `<div class="inspector-section"><h4>Responsibilities</h4>`;
+    role.responsibilities.forEach(r => html += `<span class="tag">${{r}}</span>`);
+    html += `</div>`;
+  }}
+  if (role.skills?.length) {{
+    html += `<div class="inspector-section"><h4>Skills</h4>`;
+    role.skills.forEach(s => html += `<span class="tag in">${{s}}</span>`);
+    html += `</div>`;
+  }}
+  if (role.tools?.length) {{
+    html += `<div class="inspector-section"><h4>Tools</h4>`;
+    role.tools.forEach(t => html += `<span class="tag out">${{t}}</span>`);
+    html += `</div>`;
+  }}
+
+  document.getElementById('insp-body').innerHTML = html;
+}}
+
+// ============================================================
+// VIEW TOGGLE
+// ============================================================
+
+function toggleView() {{
+  const btn = document.getElementById('toggle-orgchart');
+  const lodControls = document.getElementById('entity-lod-controls');
+  const legend = document.getElementById('orgchart-legend');
+
+  if (currentView === 'entity') {{
+    currentView = 'orgchart';
+    btn.classList.add('view-active');
+    btn.textContent = 'Entity Graph';
+    lodControls.style.display = 'none';
+    legend.classList.add('visible');
+    renderOrgChart();
+  }} else {{
+    currentView = 'entity';
+    btn.classList.remove('view-active');
+    btn.textContent = 'Org-Chart';
+    lodControls.style.display = '';
+    legend.classList.remove('visible');
+    renderEntityGraph();
+  }}
+}}
+
+// ============================================================
+// INTERACTION — ENTITY GRAPH
 // ============================================================
 
 function setLOD(level) {{
   currentLOD = level;
-  document.querySelectorAll('.lod-btn').forEach((b, i) => {{
+  document.querySelectorAll('#entity-lod-controls .lod-btn').forEach((b, i) => {{
     b.classList.toggle('active', i === level - 1);
   }});
-  render();
+  if (currentView === 'entity') {{
+    renderEntityGraph();
+  }} else {{
+    renderOrgChart();
+  }}
 }}
 
 function selectNode(node) {{
@@ -572,13 +1100,13 @@ function selectNode(node) {{
 
 // Close inspector on click outside
 document.addEventListener('click', (e) => {{
-  if (!e.target.closest('.node-group') && !e.target.closest('#inspector')) {{
+  if (!e.target.closest('.node-group') && !e.target.closest('.role-node-group') && !e.target.closest('#inspector')) {{
     document.getElementById('inspector').classList.remove('visible');
   }}
 }});
 
 // Initial render
-render();
+renderEntityGraph();
 </script>
 </body>
 </html>"""

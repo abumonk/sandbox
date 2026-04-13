@@ -1,0 +1,7 @@
+import stdlib.types
+
+// Self-referencing instance: Ark's own source tree indexed as a CodeGraph
+instance ArkSelfGraph : CodeGraphIsland {
+  backend = "in_memory"
+  languages = "python,rust,ark"
+}

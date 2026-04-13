@@ -1,0 +1,183 @@
+// ARK Studio — Ark's own development team hierarchy.
+//
+// Models the actual agent roles from .agent/roles/ as a
+// three-tier studio hierarchy:
+//   Tier 1 — Lead          (top authority, no escalation)
+//   Tier 2 — Planner       (design and task breakdown)
+//   Tier 3 — Coder, CodeReviewer, Researcher, QATester, Messenger
+
+import stdlib.types
+
+// ============================================================
+// TIER 1 — TOP AUTHORITY
+// ============================================================
+
+role Lead {
+    tier: 1
+    responsibility: "Pipeline orchestrator and technical authority. Full authority, zero autonomy — always proposes, never acts alone."
+    skills: [architecture, planning, review, coordination]
+    tools: [Read, Glob, Grep, Write, Edit, Bash]
+}
+
+// ============================================================
+// TIER 2 — DESIGN & PLANNING
+// ============================================================
+
+role Planner {
+    tier: 2
+    responsibility: "Creates task plans and design documents. Architecture decisions, file targeting, and scope definition."
+    escalates_to: Lead
+    skills: [architecture, design, analysis, documentation]
+    tools: [Read, Glob, Grep, Write, Edit]
+}
+
+// ============================================================
+// TIER 3 — SPECIALISTS
+// ============================================================
+
+role Coder {
+    tier: 3
+    responsibility: "Implements features and fixes with emphasis on code quality, testing, and convention adherence."
+    escalates_to: Planner
+    skills: [python, rust, testing, linting]
+    tools: [Read, Glob, Grep, Write, Edit, Bash]
+}
+
+role CodeReviewer {
+    tier: 3
+    responsibility: "Reviews code for quality, style, patterns, and convention adherence."
+    escalates_to: Planner
+    skills: [linting, review, analysis]
+    tools: [Read, Glob, Grep, Bash]
+}
+
+role Researcher {
+    tier: 3
+    responsibility: "Analyzes completed tasks to extract patterns, lessons learned, and knowledge for the knowledge base."
+    escalates_to: Lead
+    skills: [analysis, documentation, knowledge_extraction]
+    tools: [Read, Glob, Grep, Write, Edit, Bash]
+}
+
+role QATester {
+    tier: 3
+    responsibility: "Reviews implementation by writing and running tests. Focuses on test coverage and regression prevention."
+    escalates_to: Planner
+    skills: [testing, analysis]
+    tools: [Read, Glob, Grep, Bash, Write]
+}
+
+role Messenger {
+    tier: 3
+    responsibility: "Question lifecycle manager. Presents agent questions to users, collects answers, manages timeouts and defaults."
+    escalates_to: Lead
+    skills: [communication, formatting]
+    tools: [Read, Glob, Grep, Write, Edit]
+}
+
+// ============================================================
+// STUDIO — GROUP ROLES BY TIER
+// ============================================================
+
+studio ArkStudio {
+    description: "Ark DSL development team — three-tier hierarchy of agent roles."
+    tier 1 { Lead }
+    tier 2 { Planner }
+    tier 3 { Coder, CodeReviewer, Researcher, QATester, Messenger }
+}
+
+// ============================================================
+// COMMANDS — WORKFLOW SLASH-COMMANDS
+// ============================================================
+
+command plan_task {
+    description: "Break down a task into a design document with target files and acceptance criteria."
+    phase: planning
+    role: Planner
+    prompt: "Read the task file, explore the codebase, write a design document, set status to ready."
+    output: design_doc
+}
+
+command implement {
+    description: "Implement the design from a task file, run build and tests, set status to done."
+    phase: implementing
+    role: Coder
+    prompt: "Read the task and design doc, implement changes, run tests, update task log."
+    output: implementation
+}
+
+command review {
+    description: "Review the implementation for quality, style, and convention adherence."
+    phase: reviewing
+    role: CodeReviewer
+    prompt: "Read task and changed files, write review report, set status passed or failed."
+    output: review_report
+}
+
+command research {
+    description: "Extract patterns and lessons from a completed task into the knowledge base."
+    phase: researching
+    role: Researcher
+    prompt: "Read task and implementation, update knowledge base with patterns and lessons."
+    output: knowledge_entry
+}
+
+command qa_test {
+    description: "Write and run tests for the implementation to verify coverage and catch regressions."
+    phase: reviewing
+    role: QATester
+    prompt: "Read task and implementation, write tests, run them, report coverage and failures."
+    output: test_report
+}
+
+// ============================================================
+// HOOKS — EVENT-DRIVEN RULES
+// ============================================================
+
+hook pre_commit {
+    description: "Run verification checks before any commit is created."
+    event: pre_commit
+    pattern: "specs/**/*.ark"
+    action: "python ark.py verify $FILE"
+}
+
+hook task_complete {
+    description: "Trigger researcher when a task reaches done status."
+    event: task_complete
+    pattern: ".agent/tasks/*.md"
+    action: "spawn researcher for knowledge extraction"
+}
+
+hook test_start {
+    description: "Log when a test run begins for traceability."
+    event: test_start
+    pattern: "tests/**/*.py"
+    action: "append test session start to .agent/metrics.md"
+}
+
+// ============================================================
+// RULES — PATH-SCOPED POLICIES
+// ============================================================
+
+rule specs_path_convention {
+    description: "All .ark spec files must live under specs/ and use snake_case names."
+    path: "specs/**/*.ark"
+    constraint: "Filename must match [a-z][a-z0-9_]*.ark and reside under specs/ subtree."
+    severity: error
+}
+
+rule tests_required {
+    description: "Any task touching source files under tools/ must include test coverage."
+    path: "tools/**/*.py"
+    constraint: "At least one pytest test must exist in tests/ for each modified module."
+    severity: warning
+}
+
+// ============================================================
+// VERIFICATION
+// ============================================================
+
+verify ArkStudioChecks {
+    check escalation_acyclic: true
+    check all_commands_resolved: true
+}

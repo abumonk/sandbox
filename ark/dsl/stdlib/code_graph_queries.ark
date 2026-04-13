@@ -1,0 +1,79 @@
+// ARK Standard Library — Code Graph Query Expressions & Predicates
+// Uses |> pipe syntax with graph-* primitive stages.
+
+import stdlib.types
+
+// ============================================================
+// QUERY EXPRESSIONS
+// ============================================================
+
+// Find all callers of a function
+expression callers {
+  in: graph: String, fn_name: String
+  out: String
+  chain: graph |> graph-callers(fn_name)
+}
+
+// Find the transitive call chain from an entry point
+expression call-chain {
+  in: graph: String, entry: String
+  out: String
+  chain: graph |> graph-call-chain(entry)
+}
+
+// Find dead code (unreferenced functions)
+expression dead-code {
+  in: graph: String
+  out: String
+  chain: graph |> graph-dead-code
+}
+
+// Find functions above a complexity threshold
+expression complex-functions {
+  in: graph: String, threshold: Int
+  out: String
+  chain: graph |> graph-complex(threshold)
+}
+
+// Find all subclasses of a class
+expression subclasses {
+  in: graph: String, class_name: String
+  out: String
+  chain: graph |> graph-subclasses(class_name)
+}
+
+// Find all modules that import a given module
+expression importers {
+  in: graph: String, module_name: String
+  out: String
+  chain: graph |> graph-importers(module_name)
+}
+
+// Find module dependency graph
+expression module-deps {
+  in: graph: String, module_name: String
+  out: String
+  chain: graph |> graph-module-deps(module_name)
+}
+
+// ============================================================
+// PREDICATES
+// ============================================================
+
+// Check if a node is reachable from another
+predicate is-reachable {
+  in: graph: String, source: String, target: String
+  check: graph |> graph-is-reachable(source, target)
+}
+
+// Check if the graph has inheritance cycles
+predicate has-cycles {
+  in: graph: String
+  check: graph |> graph-has-cycles
+}
+
+// Check if a function is dead code
+predicate is-dead {
+  in: graph: String, fn_name: String
+  check: graph |> graph-is-dead(fn_name)
+}

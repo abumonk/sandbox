@@ -1,0 +1,69 @@
+// Test spec for org-chart rendering
+// Exercises studio/role items with tier levels and escalation paths
+
+role TechLead {
+  tier: 1
+  responsibility: "Set technical direction"
+  responsibility: "Review critical architecture decisions"
+  escalates_to: TechLead
+  skills: [architecture, code_review, mentoring]
+  tools: [github, jira]
+  description: "Lead technical decisions across the team"
+}
+
+role BackendLead {
+  tier: 2
+  responsibility: "Own backend service delivery"
+  responsibility: "Coordinate with infra team"
+  escalates_to: TechLead
+  skills: [rust, python, distributed_systems]
+  tools: [github, datadog]
+  description: "Lead backend engineering"
+}
+
+role FrontendLead {
+  tier: 2
+  responsibility: "Own frontend quality"
+  responsibility: "Drive UX standards"
+  escalates_to: TechLead
+  skills: [typescript, react, css]
+  tools: [github, figma]
+  description: "Lead frontend engineering"
+}
+
+role BackendEngineer {
+  tier: 3
+  responsibility: "Implement backend features"
+  responsibility: "Write tests"
+  escalates_to: BackendLead
+  skills: [rust, python, sql]
+  tools: [github, vscode]
+  description: "Build backend services"
+}
+
+role FrontendEngineer {
+  tier: 3
+  responsibility: "Implement UI components"
+  responsibility: "Write E2E tests"
+  escalates_to: FrontendLead
+  skills: [typescript, react]
+  tools: [github, vscode, figma]
+  description: "Build UI"
+}
+
+role QASpecialist {
+  tier: 3
+  responsibility: "Design test plans"
+  responsibility: "Run integration tests"
+  escalates_to: BackendLead
+  skills: [testing, automation, python]
+  tools: [pytest, selenium, github]
+  description: "Ensure product quality"
+}
+
+studio ArkStudio {
+  tier 1 { TechLead }
+  tier 2 { BackendLead, FrontendLead }
+  tier 3 { BackendEngineer, FrontendEngineer, QASpecialist }
+  description: "Core ARK development studio"
+}

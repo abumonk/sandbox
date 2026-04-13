@@ -1,0 +1,69 @@
+// ARK Standard Library — Studio Schema
+// Defines struct and enum types for studio hierarchy, roles, commands, hooks,
+// rules, templates, and escalation paths.
+
+import stdlib.types
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+// Tier levels for role hierarchy
+enum Tier {
+    Director,      // Tier 1 — vision, cross-domain coordination
+    Lead,          // Tier 2 — domain leads
+    Specialist     // Tier 3 — domain specialists
+}
+
+// Tool permissions available to agents
+enum AgentTool {
+    Read, Write, Edit, Glob, Grep, Bash,
+    WebSearch, WebFetch, MCP
+}
+
+// Hook event types
+enum HookEvent {
+    pre_commit, post_commit,
+    pre_push, post_push,
+    session_start, session_end,
+    file_change, task_complete,
+    build_start, build_end,
+    test_start, test_end
+}
+
+// Rule and hook severity levels
+enum Severity {
+    error,
+    warning,
+    info
+}
+
+// Workflow phases for command scoping
+enum WorkflowPhase {
+    concept, design, planning,
+    implementation, review,
+    testing, release, maintenance
+}
+
+// ============================================================
+// STRUCTS
+// ============================================================
+
+// Skill definition
+struct Skill {
+    name: String,
+    category: String
+}
+
+// Escalation path entry between roles
+struct EscalationPath {
+    from_role: String,
+    to_role: String,
+    condition: String
+}
+
+// Command output schema
+struct CommandOutput {
+    format: String,
+    sections: [String]
+}

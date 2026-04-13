@@ -1,0 +1,102 @@
+// ARK Standard Library — Code Graph Schema
+// Defines the data model for code knowledge graphs.
+
+import stdlib.types
+
+// Node types
+struct Module {
+    name: String,
+    path: String,
+    language: String,
+    line_count: Int
+}
+
+struct Function {
+    name: String,
+    module: String,
+    line: Int,
+    end_line: Int,
+    params: Int,
+    is_async: Bool,
+    decorators: String
+}
+
+struct Class {
+    name: String,
+    module: String,
+    line: Int,
+    end_line: Int,
+    bases: String
+}
+
+struct Method {
+    name: String,
+    class_name: String,
+    module: String,
+    line: Int,
+    end_line: Int,
+    is_static: Bool,
+    is_async: Bool
+}
+
+struct Parameter {
+    name: String,
+    type_hint: String,
+    default_value: String,
+    owner: String
+}
+
+struct Variable {
+    name: String,
+    scope: String,
+    module: String,
+    line: Int
+}
+
+// Edge types
+enum EdgeKind {
+    calls,
+    imports,
+    inherits,
+    contains,
+    references,
+    ark_bridge
+}
+
+struct Edge {
+    source: String,
+    target: String,
+    kind: String,
+    module: String,
+    line: Int
+}
+
+// Complexity metrics
+struct Complexity {
+    function_name: String,
+    module: String,
+    cyclomatic: Int,
+    language: String
+}
+
+// Ark-specific entity in the graph
+struct ArkEntity {
+    name: String,
+    kind: String,
+    module: String,
+    line: Int
+}
+
+// Graph metadata
+struct GraphMetadata {
+    indexed_at: String,
+    root_path: String,
+    node_count: Int,
+    edge_count: Int,
+    languages: String
+}
+
+// Aggregate graph
+struct CodeGraph {
+    metadata: GraphMetadata
+}

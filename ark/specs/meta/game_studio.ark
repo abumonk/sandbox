@@ -1,0 +1,501 @@
+// game_studio.ark — Game Studio Exemplar
+// Representative subset of a full game development studio hierarchy.
+// ~18 roles across 3 tiers, ~20 commands, ~6 hooks, ~5 rules, ~10 templates.
+
+import stdlib.types
+
+// ============================================================
+// TIER 1 — DIRECTORS
+// ============================================================
+
+role Creative_Director {
+    tier: 1
+    responsibility: "Own the game vision, creative direction, and player experience across all disciplines"
+    skills: [vision, storytelling, leadership, design, collaboration]
+    tools: [Read, Write, Edit, WebSearch, WebFetch]
+}
+
+role Technical_Director {
+    tier: 1
+    responsibility: "Define technical architecture, performance standards, and engineering practices"
+    skills: [architecture, performance, rendering, systems_design, cpp, rust]
+    tools: [Read, Write, Edit, Bash, Grep]
+}
+
+role Producer {
+    tier: 1
+    responsibility: "Drive schedules, milestones, resource allocation, and cross-team coordination"
+    skills: [scheduling, risk_management, stakeholder_comms, agile, budgeting]
+    tools: [Read, Write, Edit, Glob, WebSearch]
+}
+
+// ============================================================
+// TIER 2 — LEADS
+// ============================================================
+
+role Game_Designer {
+    tier: 2
+    responsibility: "Design and document core gameplay systems, mechanics, and player loops"
+    escalates_to: Creative_Director
+    skills: [systems_design, balancing, prototyping, documentation, playtesting]
+    tools: [Read, Write, Edit, Glob, WebSearch]
+}
+
+role Lead_Programmer {
+    tier: 2
+    responsibility: "Oversee code architecture, technical standards, and cross-discipline integration"
+    escalates_to: Technical_Director
+    skills: [architecture, cpp, rust, code_review, mentoring, debugging]
+    tools: [Read, Write, Edit, Bash, Grep]
+}
+
+role Art_Director {
+    tier: 2
+    responsibility: "Define visual style, art pipeline standards, and asset quality bars"
+    escalates_to: Creative_Director
+    skills: [visual_design, art_direction, pipeline_design, color_theory, modeling_3d]
+    tools: [Read, Write, Edit, Glob, WebFetch]
+}
+
+role Audio_Lead {
+    tier: 2
+    responsibility: "Design audio systems, direct music production, and maintain sound quality"
+    escalates_to: Creative_Director
+    skills: [sound_design, wwise, fmod, mixing, music_direction]
+    tools: [Read, Write, Edit, Bash, WebSearch]
+}
+
+role QA_Lead {
+    tier: 2
+    responsibility: "Own testing strategy, bug triage, and quality gate criteria across all builds"
+    escalates_to: Producer
+    skills: [test_planning, automation, bug_triage, regression, risk_analysis]
+    tools: [Read, Write, Edit, Bash, Grep]
+}
+
+role Release_Manager {
+    tier: 2
+    responsibility: "Manage build pipeline, release branches, deployment, and cert submissions"
+    escalates_to: Producer
+    skills: [ci_cd, build_systems, versioning, platform_cert, devops]
+    tools: [Read, Write, Edit, Bash, Glob]
+}
+
+// ============================================================
+// TIER 3 — SPECIALISTS
+// ============================================================
+
+role Gameplay_Programmer {
+    tier: 3
+    responsibility: "Implement data-driven gameplay mechanics, abilities, and player controller logic"
+    escalates_to: Lead_Programmer
+    skills: [cpp, gameplay_framework, input_systems, animation_bp, debugging]
+    tools: [Read, Write, Edit, Bash, Grep]
+}
+
+role Engine_Programmer {
+    tier: 3
+    responsibility: "Maintain and extend core engine systems with zero-allocation hot-path discipline"
+    escalates_to: Lead_Programmer
+    skills: [cpp, rust, rendering, memory_management, profiling, simd]
+    tools: [Read, Write, Edit, Bash, Grep]
+}
+
+role AI_Programmer {
+    tier: 3
+    responsibility: "Implement NPC behaviors, pathfinding, and perception within the AI perf budget"
+    escalates_to: Lead_Programmer
+    skills: [behavior_trees, pathfinding, perception, cpp, debugging]
+    tools: [Read, Write, Edit, Bash, Grep]
+}
+
+role Network_Programmer {
+    tier: 3
+    responsibility: "Build server-authoritative multiplayer systems, netcode, and lag compensation"
+    escalates_to: Lead_Programmer
+    skills: [netcode, udp, replication, cpp, latency_analysis]
+    tools: [Read, Write, Edit, Bash, Grep]
+}
+
+role Systems_Designer {
+    tier: 3
+    responsibility: "Design and balance economy, progression, loot, and meta game systems"
+    escalates_to: Game_Designer
+    skills: [systems_design, data_tables, balancing, excel, economy_modeling]
+    tools: [Read, Write, Edit, Glob, WebSearch]
+}
+
+role Level_Designer {
+    tier: 3
+    responsibility: "Build world layouts, pacing structures, encounter spaces, and navigation meshes"
+    escalates_to: Game_Designer
+    skills: [level_design, worldbuilding, encounter_design, navmesh, ue5_editor]
+    tools: [Read, Write, Edit, Glob, WebFetch]
+}
+
+role Technical_Artist {
+    tier: 3
+    responsibility: "Bridge art and engineering through shader authoring, LOD setup, and optimization"
+    escalates_to: Art_Director
+    skills: [shaders, hlsl, materials, lod_pipeline, profiling, python_scripting]
+    tools: [Read, Write, Edit, Bash, Grep]
+}
+
+role Sound_Designer {
+    tier: 3
+    responsibility: "Create and implement SFX, ambient audio, and interactive audio events"
+    escalates_to: Audio_Lead
+    skills: [sound_design, wwise, foley, audio_middleware, mixing]
+    tools: [Read, Write, Edit, Bash, WebSearch]
+}
+
+role Writer {
+    tier: 3
+    responsibility: "Craft narrative, dialogue, lore, and in-world text with design alignment"
+    escalates_to: Creative_Director
+    skills: [narrative_design, dialogue_writing, lore, arc_structure, editing]
+    tools: [Read, Write, Edit, Glob, WebSearch]
+}
+
+role UX_Designer {
+    tier: 3
+    responsibility: "Design UI flows, HUD systems, accessibility features, and onboarding experiences"
+    escalates_to: Art_Director
+    skills: [ux_design, figma, hud_design, accessibility, usability_testing]
+    tools: [Read, Write, Edit, WebSearch, WebFetch]
+}
+
+// ============================================================
+// STUDIO GROUPING
+// ============================================================
+
+studio GameStudio {
+    description: "Full-stack game development studio with directors, leads, and specialists"
+    tier 1 { Creative_Director, Technical_Director, Producer }
+    tier 2 { Game_Designer, Lead_Programmer, Art_Director, Audio_Lead, QA_Lead, Release_Manager }
+    tier 3 { Gameplay_Programmer, Engine_Programmer, AI_Programmer, Network_Programmer, Systems_Designer, Level_Designer, Technical_Artist, Sound_Designer, Writer, UX_Designer }
+}
+
+// ============================================================
+// COMMANDS — workflow slash-commands
+// ============================================================
+
+command brainstorm {
+    description: "Facilitate a creative ideation session for a new feature or concept"
+    phase: ideation
+    role: Creative_Director
+    prompt: "Run a structured brainstorm: define the problem space, generate concepts, and capture top ideas with rationale"
+    output: BrainstormDoc
+}
+
+command design_system {
+    description: "Author a full gameplay systems design document for a given mechanic"
+    phase: design
+    role: Game_Designer
+    prompt: "Produce a systems design doc covering inputs, outputs, tuning parameters, edge cases, and open questions"
+    output: SystemsDesignDoc
+}
+
+command create_epics {
+    description: "Break a design doc into actionable epics and user stories for sprint planning"
+    phase: planning
+    role: Producer
+    prompt: "Decompose the design into epics with acceptance criteria, story points, and dependencies"
+    output: EpicList
+}
+
+command dev_story {
+    description: "Implement a single user story from the current sprint backlog"
+    phase: development
+    role: Gameplay_Programmer
+    prompt: "Implement the story following data-driven patterns, write unit tests, and mark done"
+    output: PullRequest
+}
+
+command code_review {
+    description: "Review a pull request for correctness, performance, and standards compliance"
+    phase: review
+    role: Lead_Programmer
+    prompt: "Review the diff for logic errors, zero-alloc violations, naming conventions, and test coverage"
+    output: ReviewReport
+}
+
+command qa_plan {
+    description: "Generate a test plan covering functional, regression, and edge-case scenarios"
+    phase: testing
+    role: QA_Lead
+    prompt: "Produce a test plan with test cases, priority tiers, environment requirements, and pass criteria"
+    output: TestPlan
+}
+
+command release_checklist {
+    description: "Produce a release readiness checklist for the current build"
+    phase: release
+    role: Release_Manager
+    prompt: "Validate build integrity, platform cert requirements, version bump, and deployment runbook"
+    output: ReleaseChecklist
+}
+
+command perf_audit {
+    description: "Profile a system and produce an optimization report with actionable findings"
+    phase: optimization
+    role: Engine_Programmer
+    prompt: "Profile the target system, identify hotspots, propose zero-alloc or SIMD improvements"
+    output: PerfReport
+}
+
+command ai_behavior_spec {
+    description: "Specify behavior tree logic and perception parameters for an NPC type"
+    phase: design
+    role: AI_Programmer
+    prompt: "Author a behavior spec covering state transitions, perception radii, and perf budget constraints"
+    output: AIBehaviorSpec
+}
+
+command network_design {
+    description: "Design the replication model and authority boundaries for a new multiplayer feature"
+    phase: design
+    role: Network_Programmer
+    prompt: "Define server/client authority split, replication frequency, and lag compensation strategy"
+    output: NetworkDesignDoc
+}
+
+command asset_review {
+    description: "Review art assets for style conformance, polycount, and texture budget compliance"
+    phase: review
+    role: Art_Director
+    prompt: "Check assets against style guide, LOD requirements, and texture atlas budgets"
+    output: AssetReviewReport
+}
+
+command audio_integration {
+    description: "Integrate Wwise audio events into a feature area and validate mix"
+    phase: development
+    role: Sound_Designer
+    prompt: "Wire audio events to gameplay triggers, set RTPC ranges, and validate the mix in-engine"
+    output: AudioIntegrationReport
+}
+
+command level_review {
+    description: "Review a level for layout quality, encounter pacing, and navigation correctness"
+    phase: review
+    role: Level_Designer
+    prompt: "Walk the level, assess pacing, navmesh coverage, lighting mood, and blocking issues"
+    output: LevelReviewReport
+}
+
+command narrative_pass {
+    description: "Perform a narrative consistency pass over a content area or quest"
+    phase: review
+    role: Writer
+    prompt: "Review all dialogue, lore pickups, and UI text for tone, consistency, and arc alignment"
+    output: NarrativeReviewDoc
+}
+
+command ux_audit {
+    description: "Audit a UI feature for usability, clarity, and accessibility compliance"
+    phase: review
+    role: UX_Designer
+    prompt: "Evaluate flows for clarity, contrast, font size, gamepad navigation, and screen reader support"
+    output: UXAuditReport
+}
+
+command sprint_retro {
+    description: "Facilitate a sprint retrospective and produce action items"
+    phase: planning
+    role: Producer
+    prompt: "Run a retro: what went well, what didn't, and 3 concrete improvement actions with owners"
+    output: RetroDoc
+}
+
+command shader_optimize {
+    description: "Profile and optimize a shader pass for target hardware"
+    phase: optimization
+    role: Technical_Artist
+    prompt: "Analyse instruction count and bandwidth, propose texture sampling and ALU reductions"
+    output: ShaderOptReport
+}
+
+command milestone_review {
+    description: "Conduct a milestone review gate with go/no-go decision and risk log"
+    phase: planning
+    role: Producer
+    prompt: "Assess milestone completion against criteria, log open risks, and produce a go/no-go recommendation"
+    output: MilestoneReport
+}
+
+command accessibility_check {
+    description: "Validate a feature against the accessibility guide and log gaps"
+    phase: testing
+    role: UX_Designer
+    prompt: "Check colorblind modes, subtitle options, input remapping, and difficulty assists"
+    output: AccessibilityReport
+}
+
+command post_mortem {
+    description: "Produce a project post-mortem covering wins, misses, and lessons learned"
+    phase: review
+    role: Producer
+    prompt: "Gather team input on what worked, what failed, root causes, and process improvements"
+    output: PostMortemDoc
+}
+
+// ============================================================
+// HOOKS — event-driven rules
+// ============================================================
+
+hook pre_commit_asset_naming {
+    description: "Reject commits that contain assets not matching the studio naming convention"
+    event: pre_commit
+    pattern: "content/**/*"
+    action: "validate_asset_names --convention studio_naming_guide --fail-on-violation"
+}
+
+hook post_push_build_trigger {
+    description: "Trigger a CI build and test suite on every push to main or release branches"
+    event: post_push
+    pattern: "refs/heads/main,refs/heads/release/*"
+    action: "jenkins trigger-build --job game-ci --branch $BRANCH --notify slack:#builds"
+}
+
+hook pre_submit_perf_check {
+    description: "Run automated performance regression tests before any PR can merge"
+    event: pre_push
+    pattern: "Source/**/*.cpp,Source/**/*.h"
+    action: "ark perf-check --budget engine_perf_budget.ark --fail-on-regression"
+}
+
+hook post_build_notify {
+    description: "Send build status notification to team channels after each CI run"
+    event: build_end
+    pattern: "build/artifacts/*"
+    action: "notify-team --channel slack:#builds --attach build_report.json"
+}
+
+hook session_audit {
+    description: "Log all agent sessions for audit and cost tracking"
+    event: session_end
+    pattern: ".agent/sessions/*"
+    action: "append-audit-log --file .agent/audit/sessions.jsonl --fields role,tokens,duration"
+}
+
+hook gap_detection {
+    description: "Detect design gaps when a new feature ticket lacks a linked GDD section"
+    event: task_complete
+    pattern: "docs/design/**/*.md"
+    action: "check-design-coverage --template GDD --fail-if-missing"
+}
+
+// ============================================================
+// RULES — path-scoped policies
+// ============================================================
+
+rule gameplay_data_driven {
+    description: "All gameplay parameters must be defined in data tables, not hard-coded"
+    path: "Source/Gameplay/**/*.cpp"
+    constraint: "No numeric literals in gameplay logic; values must reference DataTable rows"
+    severity: error
+}
+
+rule engine_zero_alloc {
+    description: "Engine hot paths must not allocate heap memory per frame"
+    path: "Source/Engine/**/*.cpp"
+    constraint: "No new/delete/malloc in #process bodies tagged hot_path; use pool allocators"
+    severity: error
+}
+
+rule ai_perf_budget {
+    description: "AI tick cost must not exceed the per-frame AI performance budget"
+    path: "Source/AI/**/*.cpp"
+    constraint: "AI update cycle <= 2ms per 100 NPCs on target hardware; use spatial hashing"
+    severity: warning
+}
+
+rule network_server_authority {
+    description: "All gameplay state mutations must originate from server-authoritative code"
+    path: "Source/Network/**/*.cpp"
+    constraint: "Client code may not write game state directly; route through RPCs with server validation"
+    severity: error
+}
+
+rule design_docs_required {
+    description: "Every feature epic must have a linked GDD section before implementation begins"
+    path: "docs/design/**/*.md"
+    constraint: "Feature tickets must reference a GDD section ID; orphan tickets block sprint entry"
+    severity: warning
+}
+
+// ============================================================
+// TEMPLATES — document skeletons
+// ============================================================
+
+template GDD {
+    description: "Game Design Document template covering vision, mechanics, and open questions"
+    bound_to: Game_Designer
+    sections: ["Vision", "Core_Loop", "Mechanics", "Progression", "Economy", "Edge_Cases", "Open_Questions"]
+}
+
+template ADR {
+    description: "Architecture Decision Record for capturing technical decisions and rationale"
+    bound_to: Technical_Director
+    sections: ["Title", "Status", "Context", "Decision", "Consequences", "Alternatives_Considered"]
+}
+
+template SprintPlan {
+    description: "Sprint planning document with goals, stories, capacity, and risks"
+    bound_to: Producer
+    sections: ["Sprint_Goal", "Committed_Stories", "Stretch_Goals", "Team_Capacity", "Risks", "Definition_of_Done"]
+}
+
+template BugReport {
+    description: "Structured bug report template for QA and developer triage"
+    bound_to: QA_Lead
+    sections: ["Summary", "Steps_to_Reproduce", "Expected_Behavior", "Actual_Behavior", "Severity", "Platform", "Attachments"]
+}
+
+template TechSpec {
+    description: "Technical specification for a new engine or gameplay system"
+    bound_to: Lead_Programmer
+    sections: ["Overview", "API_Surface", "Data_Layout", "Performance_Budget", "Dependencies", "Test_Plan", "Migration_Notes"]
+}
+
+template UXSpec {
+    description: "UX specification covering flows, wireframes, and accessibility requirements"
+    bound_to: UX_Designer
+    sections: ["User_Goal", "Flow_Diagram", "Wireframes", "Accessibility_Requirements", "Error_States", "Open_Questions"]
+}
+
+template AccessibilityGuide {
+    description: "Accessibility audit checklist aligned with WCAG and gaming accessibility guidelines"
+    bound_to: UX_Designer
+    sections: ["Visual", "Audio", "Motor", "Cognitive", "Platform_Requirements", "Known_Gaps"]
+}
+
+template PostMortem {
+    description: "Project or sprint post-mortem capturing outcomes, learnings, and process changes"
+    bound_to: Producer
+    sections: ["What_Went_Well", "What_Went_Badly", "Root_Causes", "Action_Items", "Process_Changes", "Team_Health"]
+}
+
+template NarrativeBible {
+    description: "Narrative bible defining world lore, character arcs, and tone guidelines"
+    bound_to: Writer
+    sections: ["World_Overview", "Factions", "Key_Characters", "Tone_and_Voice", "Lore_Timeline", "Forbidden_Topics"]
+}
+
+template AudioDirectionDoc {
+    description: "Audio direction document defining sonic identity, mix targets, and implementation standards"
+    bound_to: Audio_Lead
+    sections: ["Sonic_Identity", "Music_Direction", "SFX_Palette", "Mix_Targets", "Wwise_Architecture", "Platform_Constraints"]
+}
+
+// ============================================================
+// VERIFICATION
+// ============================================================
+
+verify GameStudioChecks {
+    check has_directors: Creative_Director.tier == 1
+    check has_tier2_leads: Game_Designer.tier == 2
+    check specialists_escalate: Gameplay_Programmer.tier == 3
+    check studio_defined: GameStudio.description == "Full-stack game development studio with directors, leads, and specialists"
+}

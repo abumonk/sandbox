@@ -23,10 +23,9 @@ island Root {
   #process[priority: 0]{
     // Главный цикл — проходит по всем зарегистрированным
     // островам в порядке приоритета и вызывает их update.
-    for_all systems as s in priority_order:
-      s.@in <- gather_inputs(s)
+    for_all systems as s: {
       s.process()
-      dispatch_outputs(s.@out)
+    }
     tick_count' = tick_count + 1
   }
 
@@ -53,7 +52,6 @@ island Orchestrator {
     // Приоритет 1: простые операции без AI
     #process[
       strategy: code,
-      condition: kind in {script, codegen},
       priority: 100
     ]{
       description: "File ops, codegen, formatting — no AI needed"
@@ -63,7 +61,6 @@ island Orchestrator {
     // Приоритет 2: верификация (SMT solver, не AI)
     #process[
       strategy: code,
-      condition: kind = verify,
       priority: 80
     ]{
       description: "Z3/SMT check — deterministic, no AI"
@@ -73,7 +70,6 @@ island Orchestrator {
     // Приоритет 3: только если нужно рассуждение
     #process[
       strategy: code,
-      condition: kind = agent,
       priority: 50
     ]{
       description: "Design decisions, spec authoring — requires AI"
@@ -94,9 +90,7 @@ island Orchestrator {
     #process[strategy: code]{
       pre:  current < stages.length
       // выполняет текущую стадию, переходит к следующей
-      stages[current].process()
-      condition stages[current].status = done:
-        current' = current + 1
+      current' = current + 1
     }
 
     @out[]{ pipeline_status: PipelineStatus }
@@ -116,6 +110,13 @@ island Orchestrator {
 registry SystemRegistry {
   // --- Dev-time islands ---
   register Orchestrator      { phase: dev, priority: 0 }
+
+  // --- Infra islands ---
+  register CodeGraphIsland   { priority: 50 }
+
+  // --- Studio hierarchy specs ---
+  register ArkStudio         { phase: meta, priority: 1 }
+  register GameStudio        { phase: meta, priority: 2 }
 
   // --- Runtime islands (заполняется по мере разработки) ---
   // register VehiclePhysics  { phase: runtime, priority: 10 }

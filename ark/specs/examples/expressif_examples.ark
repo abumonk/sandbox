@@ -1,0 +1,70 @@
+// expressif_examples.ark
+// Porting three headline examples from the Expressif C# library README into ARK DSL.
+//
+// Translation pattern:
+//   Expressif C#:   new PropertyExpression(value, new Ceiling(), new Add(10), new Multiply(2))
+//   ARK chain:      x |> ceil |> add(10) |> mul(2)
+//
+// The |> operator passes the result of the left side as the first argument of the right side.
+// Predicate pipes are wrapped in {expr} (nested_ref) when used inside comparisons.
+
+import stdlib.expression
+import stdlib.predicate
+
+// ============================================================
+// Example 1 — Numeric pipeline
+// Expressif: value | numeric-to-ceiling | numeric-to-add(10) | numeric-to-multiply(2)
+// ARK:       x |> ceil |> add(addend) |> mul(factor)
+// ============================================================
+expression ceiling-add-mul {
+  in: x: Float, addend: Float, factor: Float
+  out: Float
+  chain: x |> ceil |> add(addend) |> mul(factor)
+}
+
+// ============================================================
+// Example 2 — Text pipeline
+// Expressif: value | text-to-trim | text-to-lower
+// ARK:       s |> str-trim |> str-lower
+// ============================================================
+expression clean-text {
+  in: s: String
+  out: String
+  chain: s |> str-trim |> str-lower
+}
+
+// ============================================================
+// Example 3 — Predicate (length check)
+// Expressif: value | text-to-length |> numeric-is-greater-than(5)
+// ARK:       {s |> str-len} > min_len
+//
+// The nested_ref {expr} is required so the pipe result can be
+// used as the left-hand side of the > comparison.
+// ============================================================
+predicate is-long-enough {
+  in: s: String, min_len: Int
+  check: {s |> str-len} > min_len
+}
+
+// ============================================================
+// Example 4 — Class using the expression pattern
+// Shows how |> pipe chains appear directly inside #process bodies.
+// DataProcessor applies a ceiling-add pipeline to raw sensor data,
+// and normalises its label string.
+// ============================================================
+class DataProcessor {
+  $data raw_value: Float = 0.0
+  $data label: String
+
+  // Business rule: raw sensor values must be non-negative.
+  invariant: $data raw_value >= 0.0
+
+  // Process: apply ceiling then offset; normalise the label.
+  // Translation from Expressif:
+  //   raw_value | numeric-to-abs | numeric-to-ceiling | numeric-to-add(10.0)
+  //   label     | text-to-trim   | text-to-lower
+  #process[strategy: code]{
+    raw_value' = raw_value |> abs |> ceil |> add(10.0)
+    label' = label |> str-trim |> str-lower
+  }
+}

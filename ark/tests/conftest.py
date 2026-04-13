@@ -6,6 +6,14 @@ JSON-deserialized AST dict, so tests can assert against plain dicts
 instead of dataclasses.
 """
 
+import pytest
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "integration: marks tests as end-to-end integration tests (may require real spec files)",
+    )
+
 import json
 import sys
 from pathlib import Path

@@ -212,4 +212,58 @@ EXPR_PRIMITIVES: dict = {
         "kind": "predicate",
         "arity": 0,
     },
+
+    # ------------------------------------------------------------------
+    # Graph queries — opaque, arity varies
+    # ------------------------------------------------------------------
+    "graph-callers": {
+        "rust": "graph.callers({0})",
+        "kind": "fn",
+        "arity": 1,
+    },
+    "graph-call-chain": {
+        "rust": "graph.call_chain({0})",
+        "kind": "fn",
+        "arity": 1,
+    },
+    "graph-dead-code": {
+        "rust": ".dead_code()",
+        "kind": "method",
+        "arity": 0,
+    },
+    "graph-complex": {
+        "rust": ".complex_functions({0})",
+        "kind": "method",
+        "arity": 1,
+    },
+    "graph-subclasses": {
+        "rust": ".subclasses({0})",
+        "kind": "method",
+        "arity": 1,
+    },
+    "graph-importers": {
+        "rust": ".importers({0})",
+        "kind": "method",
+        "arity": 1,
+    },
+    "graph-module-deps": {
+        "rust": ".module_deps({0})",
+        "kind": "method",
+        "arity": 1,
+    },
+    "graph-is-reachable": {
+        "rust": ".is_reachable({0}, {1})",
+        "kind": "predicate",
+        "arity": 2,
+    },
+    "graph-has-cycles": {
+        "rust": ".has_cycles()",
+        "kind": "predicate",
+        "arity": 0,
+    },
+    "graph-is-dead": {
+        "rust": ".is_dead({0})",
+        "kind": "predicate",
+        "arity": 1,
+    },
 }

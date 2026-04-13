@@ -76,6 +76,17 @@ _opaque_descriptions = {
     "str-ends-with":     "Ends-with check (uninterpreted; produces PASS_OPAQUE)",
     "str-contains":      "Contains check (uninterpreted; produces PASS_OPAQUE)",
     "str-matches":       "Regex match (uninterpreted; produces PASS_OPAQUE)",
+    # Code graph primitives
+    "graph-callers":     "All callers of a function (graph query; uninterpreted; PASS_OPAQUE)",
+    "graph-call-chain":  "Transitive call chain from entry point (graph query; uninterpreted; PASS_OPAQUE)",
+    "graph-dead-code":   "Unreferenced functions (graph query; uninterpreted; PASS_OPAQUE)",
+    "graph-complex":     "Functions above complexity threshold (graph query; uninterpreted; PASS_OPAQUE)",
+    "graph-subclasses":  "All subclasses of a class (graph query; uninterpreted; PASS_OPAQUE)",
+    "graph-importers":   "Modules importing a given module (graph query; uninterpreted; PASS_OPAQUE)",
+    "graph-module-deps": "Module dependency graph (graph query; uninterpreted; PASS_OPAQUE)",
+    "graph-is-reachable": "Node reachability check (graph predicate; uninterpreted; PASS_OPAQUE)",
+    "graph-has-cycles":  "Inheritance cycle check (graph predicate; uninterpreted; PASS_OPAQUE)",
+    "graph-is-dead":     "Dead code check for a function (graph predicate; uninterpreted; PASS_OPAQUE)",
 }
 for _name in OPAQUE_PRIMITIVES:
     PRIMITIVE_Z3[_name] = {

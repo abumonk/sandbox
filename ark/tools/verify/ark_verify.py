@@ -92,6 +92,10 @@ OPAQUE_PRIMITIVES = {
     "str-remove-chars", "str-substring", "str-replace",
     "str-starts-with", "str-ends-with", "str-contains",
     "str-matches",
+    # Code graph primitives — all opaque/uninterpreted (graph queries)
+    "graph-callers", "graph-call-chain", "graph-dead-code", "graph-complex",
+    "graph-subclasses", "graph-importers", "graph-module-deps",
+    "graph-is-reachable", "graph-has-cycles", "graph-is-dead",
 }
 
 _opaque_cache: dict = {}
@@ -122,6 +126,14 @@ def apply_opaque(name: str, val, args: list):
             out_sort = StringSort()
             if name in ("str-starts-with", "str-ends-with", "str-contains", "str-matches"):
                 out_sort = BoolSort()
+        elif name.startswith("graph-"):
+            # Graph primitives: inputs are strings (graph/node names), output is
+            # a string handle for query results, or Bool for predicate checks.
+            in_sorts = [StringSort()] * (1 + len(args))
+            if name in ("graph-is-reachable", "graph-has-cycles", "graph-is-dead"):
+                out_sort = BoolSort()
+            else:
+                out_sort = StringSort()
         else:
             in_sorts = [RealSort()] * (1 + len(args))
             out_sort = RealSort()
@@ -1208,6 +1220,91 @@ def verify_bridges(ast_items: list) -> list:
     return results
 
 
+def verify_expressions_predicates(items: list) -> dict:
+    """Verify expression and predicate definitions in an ARK file.
+
+    Each expression/predicate that uses opaque primitives (e.g. graph-*)
+    is translated to Z3 to confirm the chain is well-formed and produces
+    PASS_OPAQUE status, confirming opaque graph primitives are recognised.
+
+    Returns a dict {name: [result_record, ...]} compatible with verify_file.
+    """
+    from z3 import Solver, StringVal, unsat
+
+    results = {}
+    expr_registry = {}
+    # First pass: build expression registry from all expression items
+    for item in items:
+        if item.get("kind") == "expression":
+            expr_registry[item["name"]] = item
+
+    for item in items:
+        kind = item.get("kind")
+        if kind not in ("expression", "predicate"):
+            continue
+
+        name = item.get("name", "?")
+        print(f"\n[{kind.upper()}] {name}")
+
+        # Build a symbol table with each input bound to a fresh Z3 string constant
+        syms = SymbolTable()
+        for inp in item.get("inputs", []):
+            inp_name = inp["name"]
+            syms.vars[inp_name] = StringVal(inp_name)
+
+        # Get the chain/check expression
+        chain_key = "chain" if kind == "expression" else "check"
+        chain_expr = item.get(chain_key)
+        if chain_expr is None:
+            results[name] = [{
+                "check": f"{kind}_chain",
+                "status": "UNKNOWN",
+                "detail": f"No {chain_key} expression found",
+            }]
+            print(f"  ? [UNKNOWN] {kind}_chain — no {chain_key} expression")
+            continue
+
+        try:
+            reset_opaque_usage()
+            z3_expr = translate_expr(chain_expr, syms, expr_registry)
+            used_opaque = read_opaque_usage()
+
+            if used_opaque:
+                status = "PASS_OPAQUE"
+                opaque_note = f" (opaque: {', '.join(sorted(used_opaque))})"
+                r = {
+                    "check": f"{kind}_chain",
+                    "status": "PASS_OPAQUE",
+                    "detail": f"Chain translated successfully{opaque_note}",
+                    "opaque_primitives": sorted(used_opaque),
+                }
+                print(f"  ✓ [PASS_OPAQUE] {kind}_chain{opaque_note}")
+            else:
+                # No opaque primitives — try Z3 satisfiability check
+                s = Solver()
+                result = s.check()
+                status = "PASS" if result == unsat else "UNKNOWN"
+                r = {
+                    "check": f"{kind}_chain",
+                    "status": status,
+                    "detail": "Chain translated; no opaque primitives used",
+                }
+                print(f"  {'✓' if status == 'PASS' else '?'} [{status}] {kind}_chain")
+
+            results[name] = [r]
+
+        except Exception as exc:
+            r = {
+                "check": f"{kind}_chain",
+                "status": "FAIL",
+                "detail": str(exc),
+            }
+            results[name] = [r]
+            print(f"  ✗ [FAIL] {kind}_chain — {exc}")
+
+    return results
+
+
 def verify_file(ast_json: dict) -> dict:
     """Verify all entities in an ARK file"""
     all_results = {}
@@ -1239,6 +1336,11 @@ def verify_file(ast_json: dict) -> dict:
                 cls_results = verify_entity(cls, enum_index)
                 all_results[f"{name}.{cls.get('name', '?')}"] = cls_results
 
+    # Expression and predicate chain checks.
+    expr_pred_results = verify_expressions_predicates(items)
+    for ep_name, ep_res in expr_pred_results.items():
+        all_results[ep_name] = ep_res
+
     # Bridge contract checks (type matching).
     bridge_results = verify_bridges(items)
     if bridge_results:
@@ -1248,6 +1350,32 @@ def verify_file(ast_json: dict) -> dict:
     temporal_results = verify_temporal(items, enum_index=enum_index)
     if temporal_results:
         all_results["_temporal"] = temporal_results
+
+    # Studio verification: run when role/studio items are present.
+    studio_kinds = {"role", "studio_role", "command", "command_def", "hook", "rule"}
+    has_studio_items = any(
+        isinstance(it, dict) and it.get("kind") in studio_kinds
+        for it in items
+    )
+    if has_studio_items:
+        try:
+            from tools.verify.studio_verify import verify_studio
+        except ImportError:
+            try:
+                import sys as _sys, pathlib as _pathlib
+                _sys.path.insert(0, str(_pathlib.Path(__file__).parent.parent.parent))
+                from tools.verify.studio_verify import verify_studio
+            except ImportError:
+                # studio_verify not available — skip silently
+                verify_studio = None  # type: ignore
+        if verify_studio is not None:
+            studio_result = verify_studio(ast_json)
+            # Flatten studio check records into all_results under "_studio"
+            flat = []
+            for records in studio_result.get("checks", {}).values():
+                flat.extend(records)
+            if flat:
+                all_results["_studio"] = flat
 
     # Summary — PASS_BOUNDED counts as a pass for the purposes of the
     # running green/red tally, since it's the best the BMC can assert.

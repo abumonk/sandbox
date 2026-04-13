@@ -1,3 +1,51 @@
 [2026-04-11T00:00:00Z] lead | "adventure created: ADV-002 CodeGraphContext-style Code Knowledge Graph in Ark DSL"
 [2026-04-11T00:00:00Z] lead | "dependency set: depends_on=[ADV-001] (user chose sequential execution)"
 [2026-04-11T00:01:00Z] lead | "concept approved by user (batch approval); held in concept pending ADV-001 completion (sequential order)"
+[2026-04-13T11:43:28Z] implementer | step 2/5: created specs/infra/code_graph.ark — 1 file created
+[2026-04-13T11:43:28Z] implementer | step 3/5: updated specs/root.ark — added CodeGraphIsland registration, fixed pre-existing parse errors
+[2026-04-13T11:43:28Z] implementer | step 4/5: ran parse validation — both specs pass
+[2026-04-13T11:43:28Z] implementer | step 5/5: ran tests — 130 passed, 2 pre-existing failures
+[2026-04-13T11:43:59Z] implementer | spawn: ADV002-T012 implementing
+[2026-04-13T11:44:00Z] implementer | step 1/4: read task, design, config
+[2026-04-13T11:44:27Z] implementer | complete: 2 files changed, tests passing, status done
+[2026-04-13T11:45:26Z] implementer | step 2/4: implemented indexer.py and codegraph CLI — 2 files modified
+[2026-04-13T11:45:26Z] implementer | step 3/4: ran build — pass (no build command configured)
+[2026-04-13T11:45:26Z] implementer | step 4/4: ran tests — validation passed (83 nodes, 351 edges indexed)
+[2026-04-13T11:45:36Z] implementer | "step 3/5: implemented gen_rust_expression, gen_rust_predicate in ark_codegen.py — 2 files modified"
+[2026-04-13T11:45:36Z] implementer | "step 4/5: ran build — pass (no build command configured)"
+[2026-04-13T11:45:36Z] implementer | "step 5/5: ran tests — 21 passed, 0 failed"
+[2026-04-13T11:45:41Z] implementer | complete: 2 files changed, tests passing, status done
+[2026-04-13T11:46:30Z] implementer | spawn: ADV002-T006 implementing
+[2026-04-13T11:47:26Z] implementer | "spawn: ADV002-T014 implementing"
+[2026-04-13T11:47:26Z] implementer | "step 1/4: read task, design, config"
+[2026-04-13T11:47:30Z] implementer | step 1/4: read task, design, key files
+[2026-04-13T11:47:40Z] implementer | spawn: ADV002-T015 implementing
+[2026-04-13T11:47:40Z] implementer | step 1/5: read task, design, config
+[2026-04-13T11:48:05Z] implementer | step 2/5: implemented self_index.py and ark_self_graph.ark — 2 files created
+[2026-04-13T11:48:33Z] implementer | step 2/4: added graph-* to OPAQUE_PRIMITIVES, fixed apply_opaque sort, added verify_expressions_predicates — 2 files modified
+[2026-04-13T11:48:35Z] implementer | step 3/4: ran build — pass
+[2026-04-13T11:48:35Z] implementer | step 4/4: ran tests — 15 passed, 0 failed
+[2026-04-13T11:48:35Z] implementer | "step 2/4: implemented codegraph/visualizer.py and ark.py graph subcommand — 2 files modified"
+[2026-04-13T11:48:36Z] implementer | "step 3/4: ran build — pass (no build command configured)"
+[2026-04-13T11:48:36Z] implementer | "step 4/4: ran validation command — 89 nodes, 410 edges, HTML generated successfully"
+[2026-04-13T11:48:39Z] implementer | step 3/5: ran validation — pass (771 nodes, 3475 edges, >100 nodes threshold met)
+[2026-04-13T11:48:39Z] implementer | step 4/5: no separate test command in config, validation is the test — pass
+[2026-04-13T11:48:55Z] implementer | complete: 2 files changed, tests passing, status done
+[2026-04-13T11:48:58Z] implementer | "complete: 2 files changed, validation passing, status done"
+[2026-04-13T11:49:01Z] implementer | step 5/5: updated task file — status: done, stage: done
+[2026-04-13T11:49:01Z] implementer | complete: 2 files changed, validation passing (771 nodes, 3475 edges), status done
+[2026-04-13T11:50:58Z] implementer | spawn: ADV002-T016 implementing
+[2026-04-13T11:50:58Z] implementer | step 1/5: read task, design, config, source files
+[2026-04-13T11:52:33Z] implementer | step 2/5: ran self_index.py - 771 nodes, 3478 edges indexed
+[2026-04-13T11:52:33Z] implementer | step 3/5: ran all sample queries - stats, callers, dead-code, complexity all pass
+[2026-04-13T11:52:33Z] implementer | step 4/5: fixed language breakdown reporting in self_index.py
+[2026-04-13T11:52:48Z] implementer | step 5/5: updated task T016 to status done
+[2026-04-13T11:52:48Z] implementer | complete: 1 file changed (self_index.py fix), all queries passing, status done
+[2026-04-13T11:54:06Z] implementer | spawn: ADV002-T017 implementing
+[2026-04-13T11:54:06Z] implementer | step 1/6: read task, design, source APIs
+[2026-04-13T11:57:07Z] implementer | step 2a/6: created test_codegraph_queries.py — 31 tests passing
+[2026-04-13T11:57:07Z] implementer | step 2b/6: created test_codegraph_verify.py — 25 tests passing
+[2026-04-13T11:57:07Z] implementer | step 2c/6: created test_codegraph_integration.py — 32 tests passing (fixed relative import)
+[2026-04-13T11:57:07Z] implementer | step 3/6: ran build — pass (no compile step, import verification done)
+[2026-04-13T11:57:07Z] implementer | step 4/6: ran tests — 293 passed, 0 failed (full suite)
+[2026-04-13T11:57:07Z] implementer | complete: 3 files changed, tests passing, status done

@@ -1,0 +1,68 @@
+import stdlib.types
+import stdlib.code_graph
+
+// Abstraction: contract for code indexing
+abstraction CodeIndex {
+  @in { source_tree: Path }
+  @out[] { graph: String }
+  invariant: true
+}
+
+// Class: in-memory graph store backend
+class GraphStore : CodeIndex {
+  $data backend: String = "in_memory"
+  $data node_count: Int = 0
+  $data edge_count: Int = 0
+
+  #process[strategy: code]{
+    node_count' = node_count
+  }
+}
+
+// Class: source code indexer
+class CodeIndexer {
+  $data languages: String = "python,rust,ark"
+  $data indexed_files: Int = 0
+
+  #process[strategy: code]{
+    indexed_files' = indexed_files
+  }
+}
+
+// Class: query engine
+class QueryEngine {
+  $data last_query: String
+
+  #process[strategy: code]{
+    last_query' = last_query
+  }
+}
+
+// Class: file watcher for live updates
+class Watcher {
+  $data watch_path: String
+  $data event_count: Int = 0
+
+  #process[strategy: code]{
+    event_count' = event_count
+  }
+}
+
+// Island grouping all code graph classes
+island CodeGraphIsland {
+  strategy: code
+  description: "Code knowledge graph subsystem"
+  contains: [GraphStore, CodeIndexer, QueryEngine, Watcher]
+}
+
+// Bridge to orchestrator
+bridge CodeGraph_to_Orchestrator {
+  from: CodeGraphIsland.output
+  to: Orchestrator.input
+}
+
+// Verification
+verify CodeGraphInvariants {
+  check store_non_negative: $data node_count >= 0
+  check edges_non_negative: $data edge_count >= 0
+}

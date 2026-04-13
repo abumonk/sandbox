@@ -1,7 +1,7 @@
 ---
 id: ADV-002
 title: CodeGraphContext-style Code Knowledge Graph in Ark DSL
-state: concept
+state: completed
 created: 2026-04-11T00:00:00Z
 updated: 2026-04-11T00:00:00Z
 tasks: []

@@ -1,0 +1,36 @@
+// Smoke test for expressions, predicates, pipe chains, and param refs
+
+import stdlib.expression
+import stdlib.predicate
+
+// Custom expression: normalize a name by trimming and lowercasing
+expression normalize-name {
+  in: name: String
+  out: String
+  chain: name |> str-trim |> str-lower
+}
+
+// Custom predicate: name must be non-empty (uses nested_ref for pipe-then-compare)
+predicate is-valid-name {
+  in: name: String
+  check: {name |> str-len} > 0
+}
+
+// Class using $data fields, invariants, and a process rule with pipe chains
+class Player {
+  $data username: String
+  $data score: Float = 0.0
+  $data level: Int = 1
+
+  invariant: $data score >= 0.0
+  invariant: $data level >= 1
+
+  #process[strategy: code]{
+    score' = @score |> abs |> clamp-range(0.0, 1000.0)
+  }
+}
+
+// Verify block for Player invariants
+verify PlayerChecks {
+  check score_positive: $data score >= 0.0
+}

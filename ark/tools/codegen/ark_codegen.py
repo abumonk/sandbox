@@ -699,11 +699,201 @@ def _get_meta(proc: dict, key: str, default: str = "") -> str:
 
 
 # ============================================================
+# EXPRESSION / PREDICATE CODEGEN
+# ============================================================
+
+# Import the primitive map lazily so this module does not require it at
+# import time (keeps backward compatibility with tests that don't use
+# expression codegen).
+def _load_primitives():
+    """Return the EXPR_PRIMITIVES dict."""
+    import sys as _sys
+    from pathlib import Path as _Path
+    _codegen_dir = str(_Path(__file__).parent)
+    if _codegen_dir not in _sys.path:
+        _sys.path.insert(0, _codegen_dir)
+    from expression_primitives import EXPR_PRIMITIVES
+    return EXPR_PRIMITIVES
+
+
+def _ark_type_to_rust(type_dict: dict) -> str:
+    """Map an ARK type dict to a Rust type string."""
+    if type_dict is None:
+        return "String"
+    if type_dict.get("type") == "named":
+        name = type_dict.get("name", "String")
+        return RUST_TYPES.get(name, name)
+    return "String"
+
+
+def _render_pipe_chain(head_name: str, stages: list, locals_: set) -> str:
+    """Render a pipe chain to a Rust expression string using EXPR_PRIMITIVES.
+
+    head_name: the name of the first variable (receiver).
+    stages: list of stage dicts with 'name' and 'args'.
+    locals_: set of local variable names (for arg rendering).
+    """
+    primitives = _load_primitives()
+    result = head_name
+    for stage in stages:
+        prim_name = stage["name"]
+        args = stage.get("args", [])
+        prim = primitives.get(prim_name)
+        if prim is None:
+            result = f"{result}.{prim_name}(/* unknown */)"
+            continue
+        kind = prim["kind"]
+        rust_tmpl = prim["rust"]
+        # Build arg strings
+        arg_strs = []
+        for a in args:
+            if isinstance(a, dict) and a.get("expr") == "ident":
+                arg_strs.append(a["name"])
+            elif isinstance(a, dict) and a.get("expr") == "number":
+                v = a["value"]
+                arg_strs.append(str(v))
+            elif isinstance(a, dict) and a.get("expr") == "string":
+                arg_strs.append(f'"{a["value"]}"')
+            else:
+                arg_strs.append("/* arg */")
+        # Format placeholders {0}, {1}, ... using positional args.
+        # Also support {recv} named placeholder.
+        def _fmt(tmpl: str) -> str:
+            # Replace {recv} with the current result first (before positional fmt).
+            t = tmpl.replace("{recv}", result)
+            # Format positional placeholders with arg_strs.
+            return t.format(*arg_strs) if arg_strs else t
+        if kind in ("method", "predicate"):
+            rendered = _fmt(rust_tmpl)
+            result = f"{result}{rendered}"
+        elif kind == "binary":
+            rendered = _fmt(rust_tmpl)
+            result = f"({result}{rendered})"
+        elif kind == "unary":
+            result = rust_tmpl.replace("{self}", result)
+        elif kind == "identity":
+            pass  # no-op
+        elif kind == "fn":
+            rendered = _fmt(rust_tmpl)
+            result = rendered
+        else:
+            # fallback: treat as method
+            rendered = _fmt(rust_tmpl)
+            result = f"{result}{rendered}"
+    return result
+
+
+def gen_rust_expression(item: dict) -> str:
+    """Generate a Rust fn for an ARK expression item.
+
+    Returns the full Rust function source as a string.
+    """
+    name = item["name"].replace("-", "_")
+    inputs = item.get("inputs", [])
+    output_type = _ark_type_to_rust(item.get("output"))
+    # Build parameter list
+    params = ", ".join(
+        f"{inp['name'].replace('-', '_')}: {_ark_type_to_rust(inp.get('type'))}"
+        for inp in inputs
+    )
+    # Render pipe chain
+    chain = item.get("chain")
+    if chain and chain.get("expr") == "pipe":
+        head = chain.get("head", {})
+        head_name = head.get("name", "x") if head.get("expr") == "ident" else "x"
+        stages = chain.get("stages", [])
+        locals_ = {inp["name"] for inp in inputs}
+        body_expr = _render_pipe_chain(head_name, stages, locals_)
+    else:
+        body_expr = "/* no chain */"
+    return (
+        f"pub fn {name}({params}) -> {output_type} {{\n"
+        f"    {body_expr}\n"
+        f"}}"
+    )
+
+
+def gen_rust_predicate(item: dict) -> str:
+    """Generate a Rust fn returning bool for an ARK predicate item.
+
+    Returns the full Rust function source as a string.
+    """
+    name = item["name"].replace("-", "_")
+    inputs = item.get("inputs", [])
+    # Build parameter list
+    params = ", ".join(
+        f"{inp['name'].replace('-', '_')}: {_ark_type_to_rust(inp.get('type'))}"
+        for inp in inputs
+    )
+    # Render check chain
+    chain = item.get("check")
+    if chain and chain.get("expr") == "pipe":
+        head = chain.get("head", {})
+        head_name = head.get("name", "x") if head.get("expr") == "ident" else "x"
+        stages = chain.get("stages", [])
+        locals_ = {inp["name"] for inp in inputs}
+        body_expr = _render_pipe_chain(head_name, stages, locals_)
+    else:
+        body_expr = "/* no check */"
+    return (
+        f"pub fn {name}({params}) -> bool {{\n"
+        f"    {body_expr}\n"
+        f"}}"
+    )
+
+
+# ============================================================
 # FULL FILE CODEGEN
 # ============================================================
 
 def codegen_file(ast_json: dict, target: str = "rust", out_dir: Path = None) -> dict:
-    """Generate code for all entities in an ARK file"""
+    """Generate code for all entities in an ARK file.
+
+    Supported targets: rust, cpp, proto, studio.
+    For ``studio`` the call is delegated to studio_codegen.gen_studio which
+    works on the *parsed* ArkFile object, not the JSON AST.  To keep the
+    existing caller interface intact we re-parse the source when the target
+    is ``studio`` and the caller passes a raw JSON dict.
+    """
+    # ------------------------------------------------------------------ studio
+    if target == "studio":
+        # studio_codegen operates on the ArkFile dataclass, not on JSON.
+        # We import lazily so the rest of codegen doesn't depend on the parser.
+        try:
+            from studio_codegen import gen_studio
+        except ImportError:
+            from tools.codegen.studio_codegen import gen_studio
+
+        # Reconstruct an ArkFile-like object from the JSON AST using the
+        # actual parser so we get real dataclass instances.
+        try:
+            from ark_parser import parse
+        except ImportError:
+            from tools.parser.ark_parser import parse
+
+        # The JSON AST doesn't carry the original source, but it does carry
+        # the source path when produced via ark.py (stored in the "source"
+        # field by some versions of the parser).  Fall back to re-parsing
+        # from source_path if available; otherwise build a minimal proxy.
+        source = ast_json.get("_source")
+        source_path = ast_json.get("_source_path")
+        if source:
+            ark_file = parse(source, file_path=source_path)
+            return gen_studio(ark_file, out_dir)
+
+        # No embedded source — build a lightweight proxy so gen_studio can
+        # still extract items from the JSON-serialised structure.
+        class _ArkFileProxy:
+            def __init__(self, data: dict):
+                self.items = []
+                self.roles = {}
+                self.commands = {}
+
+        proxy = _ArkFileProxy(ast_json)
+        results = gen_studio(proxy, out_dir)
+        return results
+
+    # -------------------------------------------------------- standard targets
     results = {}
 
     for item in ast_json.get("items", []):
@@ -742,6 +932,24 @@ def codegen_file(ast_json: dict, target: str = "rust", out_dir: Path = None) -> 
                 if target == "rust":
                     code = gen_rust_entity(cls, strategy)
                     results[f"{cls['name'].lower()}.rs"] = code
+
+        elif kind == "expression":
+            if target != "rust":
+                raise NotImplementedError(
+                    f"Expression codegen is only supported for Rust (got '{target}')"
+                )
+            code = gen_rust_expression(item)
+            fname = f"{name.replace('-', '_')}.rs"
+            results[fname] = code
+
+        elif kind == "predicate":
+            if target != "rust":
+                raise NotImplementedError(
+                    f"Predicate codegen is only supported for Rust (got '{target}')"
+                )
+            code = gen_rust_predicate(item)
+            fname = f"{name.replace('-', '_')}.rs"
+            results[fname] = code
 
     # Write files
     if out_dir:

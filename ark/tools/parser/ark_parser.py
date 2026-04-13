@@ -272,6 +272,79 @@ class PredicateDef:
     description: Optional[str] = None
 
 @dataclass
+class RoleDef:
+    kind: str = "role"
+    name: str = ""
+    inherits: list = field(default_factory=list)
+    tier: Optional[int] = None
+    responsibilities: list = field(default_factory=list)
+    escalates_to: Optional[str] = None
+    skills: list = field(default_factory=list)
+    tools: list = field(default_factory=list)
+    data_fields: list = field(default_factory=list)
+    in_ports: list = field(default_factory=list)
+    out_ports: list = field(default_factory=list)
+    processes: list = field(default_factory=list)
+    description: Optional[str] = None
+
+@dataclass
+class TierGroup:
+    level: int = 0
+    members: list = field(default_factory=list)
+
+@dataclass
+class StudioDef:
+    kind: str = "studio"
+    name: str = ""
+    tiers: list = field(default_factory=list)      # list of TierGroup
+    contains: list = field(default_factory=list)
+    data_fields: list = field(default_factory=list)
+    invariants: list = field(default_factory=list)
+    processes: list = field(default_factory=list)
+    bridges: list = field(default_factory=list)
+    description: Optional[str] = None
+
+@dataclass
+class CommandDef:
+    kind: str = "command"
+    name: str = ""
+    phase: Optional[str] = None
+    prompt: Optional[str] = None
+    role: Optional[str] = None
+    output: Optional[str] = None
+    data_fields: list = field(default_factory=list)
+    description: Optional[str] = None
+
+@dataclass
+class HookDef:
+    kind: str = "hook"
+    name: str = ""
+    event: Optional[str] = None
+    pattern: Optional[str] = None
+    action: Optional[str] = None
+    data_fields: list = field(default_factory=list)
+    description: Optional[str] = None
+
+@dataclass
+class RuleDef:
+    kind: str = "rule"
+    name: str = ""
+    path: Optional[str] = None
+    constraint: Optional[str] = None
+    severity: Optional[str] = None
+    data_fields: list = field(default_factory=list)
+    description: Optional[str] = None
+
+@dataclass
+class TemplateDef:
+    kind: str = "template"
+    name: str = ""
+    sections: list = field(default_factory=list)
+    bound_to: Optional[str] = None
+    data_fields: list = field(default_factory=list)
+    description: Optional[str] = None
+
+@dataclass
 class PipeStage:
     name: str = ""          # kebab-case allowed, e.g. "text-to-lower"
     args: list = field(default_factory=list)  # extra args beyond piped value
@@ -293,6 +366,10 @@ class ArkFile:
     # Expression and predicate indices: name -> index into items list.
     expression_index: dict = field(default_factory=dict)  # name -> int index
     predicate_index: dict = field(default_factory=dict)   # name -> int index
+    # Studio hierarchy indices: name -> definition dataclass.
+    roles: dict = field(default_factory=dict)             # name -> RoleDef
+    studios: dict = field(default_factory=dict)           # name -> StudioDef
+    commands: dict = field(default_factory=dict)          # name -> CommandDef
 
     def instances_of(self, class_name: str) -> list:
         """Return the list of instances declared for `class_name`, or []."""
@@ -887,6 +964,252 @@ class ArkTransformer(Transformer):
             check=body["check"],
         )
 
+    # --- Studio hierarchy ---
+
+    def role_body(self, items):
+        return list(items)
+
+    def role_member(self, items):
+        return items[0]
+
+    def tier_stmt(self, items):
+        return {"_stmt": "tier", "value": items[0]}
+
+    def responsibility_stmt(self, items):
+        return {"_stmt": "responsibility", "value": items[0]}
+
+    def escalates_to_stmt(self, items):
+        return {"_stmt": "escalates_to", "value": str(items[0])}
+
+    def skills_stmt(self, items):
+        return {"_stmt": "skills", "value": items[0]}
+
+    def tools_stmt(self, items):
+        return {"_stmt": "tools", "value": items[0]}
+
+    def role_def(self, items):
+        name = items[0]
+        inherits = []
+        members = []
+        for item in items[1:]:
+            if isinstance(item, list) and item and isinstance(item[0], str):
+                inherits = item
+            elif isinstance(item, list):
+                members = item
+        role = RoleDef(name=name, inherits=inherits)
+        for item in members:
+            if isinstance(item, InPort):
+                role.in_ports.append(item)
+            elif isinstance(item, OutPort):
+                role.out_ports.append(item)
+            elif isinstance(item, ProcessRule):
+                role.processes.append(item)
+            elif isinstance(item, DataField):
+                role.data_fields.append(item)
+            elif isinstance(item, dict):
+                s = item.get("_stmt")
+                if s == "tier":
+                    val = item["value"]
+                    # tier value may be a number or ident_expr
+                    if isinstance(val, (int, float)):
+                        role.tier = int(val)
+                    elif isinstance(val, dict) and val.get("expr") == "ident":
+                        role.tier = val["name"]
+                    else:
+                        role.tier = val
+                elif s == "responsibility":
+                    role.responsibilities.append(item["value"])
+                elif s == "escalates_to":
+                    role.escalates_to = item["value"]
+                elif s == "skills":
+                    role.skills = item["value"]
+                elif s == "tools":
+                    role.tools = item["value"]
+                elif s == "description":
+                    role.description = item["value"]
+        return role
+
+    def studio_body(self, items):
+        return list(items)
+
+    def studio_member(self, items):
+        return items[0]
+
+    def tier_group(self, items):
+        level_val = items[0]
+        members = items[1] if len(items) > 1 else []
+        if isinstance(level_val, (int, float)):
+            level = int(level_val)
+        elif isinstance(level_val, dict) and level_val.get("expr") == "number":
+            level = int(level_val["value"])
+        elif isinstance(level_val, dict) and level_val.get("expr") == "ident":
+            level = level_val["name"]
+        else:
+            level = level_val
+        return TierGroup(level=level, members=members)
+
+    def studio_def(self, items):
+        name = items[0]
+        members = items[1] if len(items) > 1 else []
+        studio = StudioDef(name=name)
+        for item in members:
+            if isinstance(item, TierGroup):
+                studio.tiers.append(item)
+            elif isinstance(item, ProcessRule):
+                studio.processes.append(item)
+            elif isinstance(item, DataField):
+                studio.data_fields.append(item)
+            elif isinstance(item, BridgeDef):
+                studio.bridges.append(item)
+            elif isinstance(item, dict):
+                s = item.get("_stmt")
+                if s == "contains":
+                    studio.contains = item["value"]
+                elif s == "invariant":
+                    studio.invariants.append(item["expr"])
+                elif s == "description":
+                    studio.description = item["value"]
+        return studio
+
+    def command_body(self, items):
+        return list(items)
+
+    def command_member(self, items):
+        return items[0]
+
+    def phase_stmt(self, items):
+        return {"_stmt": "phase", "value": str(items[0])}
+
+    def prompt_stmt(self, items):
+        return {"_stmt": "prompt", "value": items[0]}
+
+    def role_ref_stmt(self, items):
+        return {"_stmt": "role_ref", "value": str(items[0])}
+
+    def output_stmt(self, items):
+        return {"_stmt": "output", "value": str(items[0])}
+
+    def command_def(self, items):
+        name = items[0]
+        members = items[1] if len(items) > 1 else []
+        cmd = CommandDef(name=name)
+        for item in members:
+            if isinstance(item, DataField):
+                cmd.data_fields.append(item)
+            elif isinstance(item, dict):
+                s = item.get("_stmt")
+                if s == "phase":
+                    cmd.phase = item["value"]
+                elif s == "prompt":
+                    cmd.prompt = item["value"]
+                elif s == "role_ref":
+                    cmd.role = item["value"]
+                elif s == "output":
+                    cmd.output = item["value"]
+                elif s == "description":
+                    cmd.description = item["value"]
+        return cmd
+
+    def hook_body(self, items):
+        return list(items)
+
+    def hook_member(self, items):
+        return items[0]
+
+    def event_stmt(self, items):
+        return {"_stmt": "event", "value": str(items[0])}
+
+    def pattern_stmt(self, items):
+        return {"_stmt": "pattern", "value": items[0]}
+
+    def action_stmt(self, items):
+        return {"_stmt": "action", "value": items[0]}
+
+    def hook_def(self, items):
+        name = items[0]
+        members = items[1] if len(items) > 1 else []
+        hook = HookDef(name=name)
+        for item in members:
+            if isinstance(item, DataField):
+                hook.data_fields.append(item)
+            elif isinstance(item, dict):
+                s = item.get("_stmt")
+                if s == "event":
+                    hook.event = item["value"]
+                elif s == "pattern":
+                    hook.pattern = item["value"]
+                elif s == "action":
+                    hook.action = item["value"]
+                elif s == "description":
+                    hook.description = item["value"]
+        return hook
+
+    def rule_body(self, items):
+        return list(items)
+
+    def rule_member(self, items):
+        return items[0]
+
+    def path_stmt(self, items):
+        return {"_stmt": "path", "value": items[0]}
+
+    def constraint_stmt_rule(self, items):
+        return {"_stmt": "constraint_rule", "value": items[0]}
+
+    def severity_stmt(self, items):
+        return {"_stmt": "severity", "value": str(items[0])}
+
+    def rule_def(self, items):
+        name = items[0]
+        members = items[1] if len(items) > 1 else []
+        rule = RuleDef(name=name)
+        for item in members:
+            if isinstance(item, DataField):
+                rule.data_fields.append(item)
+            elif isinstance(item, dict):
+                s = item.get("_stmt")
+                if s == "path":
+                    rule.path = item["value"]
+                elif s == "constraint_rule":
+                    rule.constraint = item["value"]
+                elif s == "severity":
+                    rule.severity = item["value"]
+                elif s == "description":
+                    rule.description = item["value"]
+        return rule
+
+    def template_body(self, items):
+        return list(items)
+
+    def template_member(self, items):
+        return items[0]
+
+    def sections_stmt(self, items):
+        return {"_stmt": "sections", "value": items[0]}
+
+    def bound_to_stmt(self, items):
+        return {"_stmt": "bound_to", "value": str(items[0])}
+
+    def string_list(self, items):
+        return list(items)
+
+    def template_def(self, items):
+        name = items[0]
+        members = items[1] if len(items) > 1 else []
+        tmpl = TemplateDef(name=name)
+        for item in members:
+            if isinstance(item, DataField):
+                tmpl.data_fields.append(item)
+            elif isinstance(item, dict):
+                s = item.get("_stmt")
+                if s == "sections":
+                    tmpl.sections = item["value"]
+                elif s == "bound_to":
+                    tmpl.bound_to = item["value"]
+                elif s == "description":
+                    tmpl.description = item["value"]
+        return tmpl
+
     # --- Import ---
 
     def item(self, items):
@@ -909,7 +1232,9 @@ class ArkTransformer(Transformer):
             elif isinstance(item, (EntityDef, InstanceDef, IslandDef,
                                    BridgeDef, RegistryDef, VerifyDef,
                                    PrimitiveDef, StructDef, EnumDef,
-                                   ExpressionDef, PredicateDef)):
+                                   ExpressionDef, PredicateDef,
+                                   RoleDef, StudioDef, CommandDef,
+                                   HookDef, RuleDef, TemplateDef)):
                 ark_items.append(item)
         return ArkFile(imports=imports, items=ark_items)
 
@@ -1049,6 +1374,19 @@ def _build_indices(ark_file: ArkFile) -> ArkFile:
     ark_file.island_classes = island_classes
     ark_file.expression_index = expression_index
     ark_file.predicate_index = predicate_index
+    roles: dict = {}
+    studios: dict = {}
+    commands: dict = {}
+    for item in ark_file.items:
+        if isinstance(item, RoleDef):
+            roles[item.name] = item
+        elif isinstance(item, StudioDef):
+            studios[item.name] = item
+        elif isinstance(item, CommandDef):
+            commands[item.name] = item
+    ark_file.roles = roles
+    ark_file.studios = studios
+    ark_file.commands = commands
     return ark_file
 
 
