@@ -1,0 +1,63 @@
+// Team Pipeline — базовые абстракции.
+// Сюда выносятся контракты, от которых наследуются конкретные
+// классы: агенты, задачи, adventure. Файл не зависит ни от чего
+// кроме stdlib и может верифицироваться / генериться отдельно.
+
+import stdlib.types
+
+// ============================================================
+// КОНТРАКТЫ
+// ============================================================
+
+// Унифицированная единица работы пайплайна.
+abstraction WorkItem {
+  $data id:         String   = "UNSET"
+  $data created_at: Uint64   = 0
+  $data updated_at: Uint64   = 0
+
+  @in{ request: String }
+
+  #process[strategy: code]{
+    pre: id != "UNSET"
+  }
+
+  @out[]{ artifacts: String, status: String }
+
+  invariant: created_at <= updated_at
+}
+
+// Агент — исполнитель, предоставляющий рассуждение, codegen или проверки.
+// strategy: agent — «последний resort», AI-агент.
+abstraction Agent {
+  $data role:    String = "generic"
+  $data model:   String = "sonnet"
+  $data memory:  String = "none"
+  $data max_turns: Int [1..100] = 30
+
+  @in{ prompt: String, task_ref: String }
+
+  #process[strategy: agent, priority: 50]{
+    pre: max_turns > 0
+    description: "Invoke subagent — requires reasoning, not deterministic"
+  }
+
+  @out[]{ result: String, log_lines: String, tokens: Int, cost: Float }
+
+  invariant: max_turns >= 1
+  invariant: max_turns <= 100
+}
+
+// Стадия пайплайна — состояние, в котором задача может находиться.
+abstraction Stage {
+  $data name:      String = "pending"
+  $data terminal:  Bool   = false
+  $data assignee:  String = "--"
+
+  @in{ entering: String }
+
+  #process[strategy: code]{
+    description: "Stage transition gate"
+  }
+
+  @out[]{ next: String }
+}

@@ -1,0 +1,133 @@
+// VehiclePhysics Island — первый игровой остров.
+// Демонстрирует тензорную стратегию для массовой обработки.
+
+import stdlib.types
+
+// ============================================================
+// АБСТРАКЦИЯ — контракт для всего, что движется
+// ============================================================
+
+abstraction Movable {
+  @in{ throttle: Float, steering: Float, dt: DeltaTime }
+
+  #process[]{
+    requires: $data fuel > 0 or not needs_fuel
+  }
+
+  @out[]{ new_transform: Transform }
+
+  invariant: position.valid()
+}
+
+// ============================================================
+// КЛАСС — конкретный Vehicle
+// ============================================================
+
+class Vehicle : Movable {
+  $data transform: Transform = Transform.identity()
+  $data velocity:  Vec3 = Vec3.zero()
+  $data fuel:      Float [0..200] = 100.0
+  $data max_speed: Float = 30.0
+  $data burn_rate: Float = 0.1
+  $data wheels:    Int {2, 4, 6} = 4
+  $data mass:      Float [100..10000] = 1500.0
+
+  @in{ throttle: Float, steering: Float, dt: DeltaTime }
+
+  // Основной update — тензорная обработка
+  #process[strategy: tensor, priority: 10]{
+    pre:  fuel > 0
+    pre:  throttle in [0..1]
+
+    // Декларативные правила — не императивный код.
+    // Codegen решает как это реализовать (SoA, SIMD, etc.)
+    acceleration = throttle * (engine_force / mass)
+    velocity' = clamp(velocity + forward * acceleration * dt, max_speed)
+    transform.position' = transform.position + velocity' * dt
+    fuel' = fuel - throttle * burn_rate * dt
+
+    post: fuel' >= 0
+    post: length(velocity') <= max_speed
+  }
+
+  // Торможение при пустом баке
+  #process[strategy: code, priority: 5, condition: fuel <= 0]{
+    velocity' = velocity * (1.0 - drag * dt)
+    condition length(velocity') < 0.01:
+      velocity' = Vec3.zero()
+  }
+
+  @out[guaranteed: true]{
+    new_transform: Transform,
+    new_velocity: Vec3,
+    new_fuel: Float
+  }
+
+  invariant: fuel >= 0
+  invariant: length(velocity) <= max_speed * 1.01  // epsilon
+  temporal: □(fuel = 0 → ◇ velocity = Vec3.zero())
+}
+
+// ============================================================
+// ОСТРОВ — группировка и стратегия выполнения
+// ============================================================
+
+island VehiclePhysics {
+  strategy: tensor
+  description: "Batch-processes all vehicles each tick using SoA layout."
+
+  memory: {
+    pool(Vehicle, max: 10000)
+    arena(16MB, per_frame)
+  }
+
+  contains: [Vehicle]
+
+  $data vehicle_count: Int [0..10000] = 0
+
+  @in{ 
+    world_tick: DeltaTime,
+    inputs: [VehicleInput]  // throttle+steering per vehicle
+  }
+
+  #process[strategy: tensor, priority: 10]{
+    description: "Main vehicle batch update"
+    // Все Vehicle обрабатываются как один тензор:
+    // positions[N], velocities[N], fuels[N] — SoA layout
+    // Один проход AVX2/tensor op обновляет всех
+    for_all Vehicle as v:
+      v.process(inputs[v.id], world_tick)
+  }
+
+  @out[guaranteed: true]{
+    transforms: [Transform],
+    velocities: [Vec3],
+    fuel_levels: [Float]
+  }
+
+  invariant: vehicle_count <= 10000
+}
+
+// ============================================================
+// ВЕРИФИКАЦИЯ
+// ============================================================
+
+verify VehiclePhysics {
+  check fuel_never_negative:
+    for_all Vehicle as v:
+      for_all transition t in v:
+        pre(t) and body(t) → post(t) → v.fuel >= 0
+
+  check speed_bounded:
+    for_all Vehicle as v:
+      □(length(v.velocity) <= v.max_speed * 1.01)
+
+  check empty_tank_stops:
+    for_all Vehicle as v:
+      □(v.fuel = 0 → ◇ v.velocity = Vec3.zero())
+
+  check no_deadlock:
+    for_all Vehicle as v:
+      for_all state s in v:
+        exists transition t: pre(t, s)
+}

@@ -1,0 +1,35 @@
+// Team Pipeline — Wrapup: завершение сессии.
+// Ручная команда /wrapup: stage-all → commit → push → session summary.
+// Не участвует в авто-переходах стадий; single-shot.
+
+import stdlib.types
+
+// ============================================================
+// WRAPUP
+// ============================================================
+
+class Wrapup {
+  $data date:        String = ""
+  $data session_dir: String = "docs/sessions/"
+
+  @in{ trigger: Bool }
+
+  #process[strategy: code, priority: 95]{
+    description: "End-of-session commit + push + session summary"
+
+    pre: trigger == true
+
+    // Шаги (см. commands/wrapup.md):
+    //   1) git add -A                           — stage всего
+    //   2) git commit -m "<conventional msg>"   — один коммит на сессию
+    //   3) git push                             — текущая ветка
+    //   4) Write docs/sessions/<YYYY-MM-DD>.md  — date, branch, commit, bullets
+
+    post: trigger == true
+  }
+
+  @out[guaranteed: true]{
+    commit_sha:     String,
+    session_path:   String
+  }
+}

@@ -1,0 +1,277 @@
+// Team Pipeline — предложенные расширения.
+//
+// Каждый блок ниже — кандидат на отдельный class/island, который
+// естественно встраивается в ARK-модель. Описан как скелет с
+// целью (что делает), точкой интеграции (куда врезается),
+// инвариантом (что гарантирует) — чтобы можно было переходить
+// к реализации сразу.
+//
+// Файл отключаемый: можно закомментировать `import team.extensions`
+// в team_pipeline.ark, если нужен чистый спек текущего плагина
+// без proposed-фич.
+
+import stdlib.types
+
+// ------------------------------------------------------------
+// 1. Budgets — бюджеты по токенам/стоимости/LOC на уровне
+//    task, adventure и пайплайна. Уже частично отражено в Task.
+//    Расширение: остров с sink-функцией, которая при превышении
+//    переводит цель в blocked и эскалирует пользователю.
+// ------------------------------------------------------------
+abstraction Budget {
+  $data scope:      BudgetScope { task, adventure, pipeline } = task
+  $data tokens_cap: Int   [0..100000000] = 1000000
+  $data cost_cap:   Float [0..100000]    = 100.0
+
+  @in{ consumed_tokens: Int, consumed_cost: Float }
+
+  #process[strategy: code, priority: 99]{
+    description: "Ratchet consumption; block target on overflow"
+    pre: consumed_tokens >= 0
+    pre: consumed_cost   >= 0
+  }
+
+  @out[]{ exceeded: Bool, remaining_tokens: Int, remaining_cost: Float }
+
+  invariant: tokens_cap >= 0
+  invariant: cost_cap   >= 0
+}
+
+// ------------------------------------------------------------
+// 2. Metrics — централизованный приёмник метрик от агентов,
+//    питает dashboard и adventure-report. В team-pipeline это
+//    hook SubagentStop + файлы под .agent/metrics/ — сейчас
+//    разбросано. Один class Metrics делает это явной точкой.
+// ------------------------------------------------------------
+class Metrics {
+  // Диапазоны дают верификатору жёсткие bounds на текущее И следующее
+  // состояние — без них invariant-check находит контрпримеры
+  // вида `total_runs = -1`.
+  $data total_tokens:   Int   [0..1000000000] = 0
+  $data total_cost:     Float [0..10000000]   = 0.0
+  $data total_runs:     Int   [0..1000000000] = 0
+  $data failures:       Int   [0..1000000000] = 0
+
+  @in{ run_tokens: Int, run_cost: Float, run_ok: Bool }
+
+  #process[strategy: code, priority: 99]{
+    description: "Aggregate per-run stats"
+    pre: run_tokens >= 0
+    pre: run_cost   >= 0
+
+    total_tokens' = total_tokens + run_tokens
+    total_cost'   = total_cost   + run_cost
+    total_runs'   = total_runs   + 1
+
+    post: total_tokens >= 0
+    post: total_runs   >= 0
+  }
+
+  @out[guaranteed: true]{ snapshot: String }
+
+  invariant: total_tokens >= 0
+  invariant: total_cost   >= 0.0
+  invariant: failures     <= total_runs
+}
+
+// ------------------------------------------------------------
+// 3. Scheduler — cron/периодические триггеры (nightly review,
+//    stale task reaper, budget digest). Сейчас team-pipeline
+//    этого не имеет; Claude Code даёт CronCreate/scheduled-tasks,
+//    но пайплайн их не использует.
+// ------------------------------------------------------------
+class Scheduler {
+  $data cron_rules: String = "[]"   // JSON: [{cron, action, target}]
+
+  @in{ now: Uint64 }
+
+  #process[strategy: code, priority: 100]{
+    description: "Fire scheduled actions on matching wallclock"
+    pre: now >= 0
+    // Кандидаты: nightly /task status → Discord, weekly backlog digest,
+    //            stale-task reaper (блок если ничего не менялось N дней)
+  }
+
+  @out[]{ fired_actions: String }
+}
+
+// ------------------------------------------------------------
+// 4. Messenger — Discord/Slack/Telegram нотификации. В team-pipeline
+//    упомянут в roadmap; здесь — island с strategy: script, в который
+//    втыкаются хуки TaskCompleted, StageTransition, Adventure.review.
+// ------------------------------------------------------------
+class Messenger {
+  $data channels_json: String = "[]"   // [{kind: discord, webhook}]
+
+  @in{ event: String, payload: String }
+
+  #process[strategy: script, priority: 90]{
+    description: "Fan-out event to configured channels"
+    pre: event != ""
+  }
+
+  @out[guaranteed: true]{ delivered: Int, failed: Int }
+}
+
+// ------------------------------------------------------------
+// 5. CascadeTracker — отслеживает влияние изменений в одном файле
+//    на остальные задачи adventure. Ровно соответствует
+//    `tools/verify/ark_impact.py` и агенту cascade-tracker.
+//    Связь двух миров: одна реализация для ARK и team-pipeline.
+// ------------------------------------------------------------
+class CascadeTracker {
+  $data changed_nodes_json: String = "[]"
+  $data affected_nodes_json: String = "[]"
+  $data severity_max: Int [0..10] = 0
+
+  @in{ modified_files: String }
+
+  #process[strategy: code, priority: 85]{
+    description: "Build dependency graph, compute reverse reachability"
+    pre: modified_files != ""
+  }
+
+  @out[guaranteed: true]{
+    cascade_report: String,
+    severity_max:   Int
+  }
+
+  invariant: severity_max >= 0
+  invariant: severity_max <= 10
+}
+
+// ------------------------------------------------------------
+// 6. TargetConditions — формализованные acceptance criteria
+//    с proof method. В team-pipeline это markdown; в ARK это
+//    естественно превращается в `verify` check с Z3. Мост между
+//    adventure-planner и ARK verify — одна и та же сущность.
+// ------------------------------------------------------------
+class TargetCondition {
+  $data id:           String = "TC-000"
+  $data description:  String = ""
+  $data proof_method: ProofMethod { check_test, check_verify, manual, metric } = check_test
+  $data status:       TCStatus    { pending, satisfied, violated }             = pending
+
+  @in{ evidence: String }
+
+  #process[strategy: verified, priority: 70]{
+    description: "Check evidence against target; verified strategy when provable"
+    pre: id != "TC-000"
+  }
+
+  @out[guaranteed: true]{ verdict: String, proof: String }
+
+  invariant: status == pending or status == satisfied or status == violated
+  temporal: □((status == satisfied) → □ (status == satisfied))
+}
+
+// ------------------------------------------------------------
+// 7. TaskDAG — явная DAG зависимостей между задачами adventure.
+//    Сейчас depends_on — строка; с DAG можно параллелить
+//    независимые ветки, раньше ловить циклы (verify).
+// ------------------------------------------------------------
+class TaskDAG {
+  $data edges_json: String = "[]"   // [{from: TASK-001, to: TASK-002}]
+  $data cycle_free: Bool   = true
+
+  @in{ tasks: String }
+
+  #process[strategy: code, priority: 80]{
+    description: "Build dependency graph; detect cycles; compute topo order"
+    pre: tasks != ""
+    post: cycle_free == true
+  }
+
+  @out[guaranteed: true]{ topo_order: String, ready_set: String }
+
+  invariant: cycle_free == true
+}
+
+// ------------------------------------------------------------
+// 8. Rollback — явный способ откатить задачу со стадии
+//    `completed` обратно в `fixing`, если researcher/пользователь
+//    обнаружил регрессию. Сейчас требует ручного правления .md.
+// ------------------------------------------------------------
+class Rollback {
+  $data task_id: String = ""
+  $data reason:  String = ""
+
+  @in{ trigger: Bool, from_stage: String, to_stage: String }
+
+  #process[strategy: verified, priority: 95]{
+    description: "Reopen task; revert git commits if branch_per_task"
+    pre: trigger == true
+    pre: task_id != ""
+
+    // Запрет произвольных переходов: откатывать можно только
+    // completed → fixing, и только с зафиксированным reason.
+    pre: from_stage == "completed"
+    pre: to_stage   == "fixing"
+    pre: reason != ""
+  }
+
+  @out[guaranteed: true]{ reverted_commits: String }
+}
+
+// ------------------------------------------------------------
+// 9. PermissionAnalyzer — уже есть как проход в adventure-planner;
+//    вынести в отдельный class, чтобы можно было запускать
+//    отдельно на любой task, а не только на полный adventure.
+// ------------------------------------------------------------
+class PermissionAnalyzer {
+  $data allowed_tools_json: String = "[]"
+  $data requested_json:     String = "[]"
+  $data gaps_count:         Int [0..100] = 0
+
+  @in{ task_ref: String, roles_json: String }
+
+  #process[strategy: code, priority: 85]{
+    description: "Four-pass analysis: role tools vs task needs"
+    pre: task_ref != ""
+    post: gaps_count >= 0
+  }
+
+  @out[guaranteed: true]{ report: String, gaps: Int }
+
+  invariant: gaps_count >= 0
+}
+
+// ------------------------------------------------------------
+// 10. RoleMemory — формализованная память роли. В team-pipeline
+//     описано как `.agent/agent-memory/{role}/MEMORY.md`. Здесь
+//     это $data entity с явным capacity и curation process.
+// ------------------------------------------------------------
+class RoleMemory {
+  $data role:     String = "planner"
+  $data capacity: Int [1..10000] = 200    // строк в MEMORY.md
+  $data entries:  Int [0..10000] = 0
+
+  @in{ new_entry: String, prune: Bool }
+
+  #process[strategy: code, priority: 40]{
+    description: "Append entry; evict LRU when over capacity"
+    pre: entries >= 0
+    post: entries <= capacity
+  }
+
+  @out[guaranteed: true]{ memory_snapshot: String }
+
+  invariant: entries >= 0
+  invariant: entries <= capacity
+}
+
+// ------------------------------------------------------------
+// Регистрация расширений — отдельный registry,
+// чтобы базовый TeamPipelineRegistry оставался минимальным.
+// ------------------------------------------------------------
+registry TeamPipelineExtensionsRegistry {
+  register Metrics             { phase: infra, priority: 99 }
+  register Scheduler           { phase: infra, priority: 98 }
+  register Messenger           { phase: infra, priority: 90 }
+  register CascadeTracker      { phase: infra, priority: 85 }
+  register TaskDAG             { phase: state, priority: 80 }
+  register TargetCondition     { phase: state, priority: 70 }
+  register PermissionAnalyzer  { phase: infra, priority: 85 }
+  register RoleMemory          { phase: infra, priority: 40 }
+  register Rollback            { phase: infra, priority: 95 }
+}

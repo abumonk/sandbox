@@ -1,0 +1,238 @@
+// ARK DSL Grammar — pest PEG.
+// Mirrors the working Lark grammar in tools/parser/ark_grammar.lark.
+//
+// Conventions:
+//   _ prefix (`_{ ... }`)   — silent rule, removed from parse tree
+//   @ prefix (`@{ ... }`)   — atomic, no whitespace or inner rules
+//   $ prefix (`${ ... }`)   — compound atomic, no WS but inner rules visible
+//   !... prefix (`!{ ... }`) — non-atomic (WS allowed inside)
+
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+COMMENT    = _{ "//" ~ (!"\n" ~ ANY)* | "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
+
+// ============================================================
+// TOP LEVEL
+// ============================================================
+
+file = { SOI ~ (import_stmt | item)* ~ EOI }
+
+import_stmt = { "import" ~ dotted_path }
+
+item = _{
+    abstraction_def
+  | class_def
+  | instance_def
+  | island_def
+  | bridge_def
+  | registry_def
+  | verify_def
+}
+
+// ============================================================
+// FOUR PRIMITIVES: @in, @out, #process, $data
+// ============================================================
+
+in_port      = { "@in" ~ "{" ~ typed_field_list? ~ "}" }
+out_port     = { "@out" ~ empty_meta? ~ "{" ~ typed_field_list? ~ "}" }
+empty_meta   = { "[" ~ meta_pair_list? ~ "]" }
+process_rule = { "#process" ~ meta_brackets? ~ "{" ~ process_body ~ "}" }
+data_field   = { "$data" ~ ident ~ ":" ~ type_expr ~ constraint? ~ default_value? }
+
+process_body = { process_stmt* }
+process_stmt = _{
+    pre_stmt
+  | post_stmt
+  | requires_stmt
+  | description_stmt
+  | for_all_stmt
+  | condition_stmt
+  | assignment
+  | expression
+}
+pre_stmt      = { "pre:" ~ expression }
+post_stmt     = { "post:" ~ expression }
+requires_stmt = { "requires:" ~ expression }
+
+// ============================================================
+// ENTITIES
+// ============================================================
+
+abstraction_def = { "abstraction" ~ ident ~ inherits? ~ "{" ~ entity_body ~ "}" }
+class_def       = { "class" ~ ident ~ inherits? ~ "{" ~ entity_body ~ "}" }
+
+entity_body   = { entity_member* }
+entity_member = _{
+    in_port
+  | out_port
+  | process_rule
+  | data_field
+  | invariant_stmt
+  | temporal_stmt
+  | description_stmt
+}
+
+inherits = { ":" ~ ident_list }
+
+instance_def = { "instance" ~ ident ~ ":" ~ ident ~ "{" ~ assignment* ~ "}" }
+
+// ============================================================
+// ISLANDS
+// ============================================================
+
+island_def    = { "island" ~ ident ~ "{" ~ island_body ~ "}" }
+island_body   = { island_member* }
+island_member = _{
+    strategy_stmt
+  | memory_stmt
+  | contains_stmt
+  | description_stmt
+  | in_port
+  | out_port
+  | process_rule
+  | class_def
+  | data_field
+  | invariant_stmt
+  | temporal_stmt
+}
+
+// ============================================================
+// BRIDGES
+// ============================================================
+
+bridge_def     = { "bridge" ~ ident ~ "{" ~ from_stmt ~ to_stmt ~ contract_block? ~ "}" }
+from_stmt      = { "from:" ~ dotted_path_or_ident }
+to_stmt        = { "to:" ~ dotted_path_or_ident }
+contract_block = { "contract" ~ "{" ~ contract_member* ~ "}" }
+contract_member = _{ invariant_stmt | temporal_stmt }
+
+// ============================================================
+// REGISTRY
+// ============================================================
+
+registry_def  = { "registry" ~ ident ~ "{" ~ register_stmt* ~ "}" }
+register_stmt = { "register" ~ ident ~ "{" ~ meta_pair_list? ~ "}" }
+
+// ============================================================
+// VERIFY
+// ============================================================
+
+verify_def = { "verify" ~ ident ~ "{" ~ check_stmt* ~ "}" }
+check_stmt = { "check" ~ ident ~ ":" ~ expression }
+
+// ============================================================
+// STATEMENTS
+// ============================================================
+
+strategy_stmt    = { "strategy:" ~ ident }
+memory_stmt      = { "memory:" ~ "{" ~ memory_entry ~ ("," ~ memory_entry)* ~ "}" }
+memory_entry     = { ident ~ "(" ~ (expression ~ ("," ~ expression)*)? ~ ")" }
+contains_stmt    = { "contains:" ~ "[" ~ ident_list ~ "]" }
+description_stmt = { "description:" ~ string_literal }
+invariant_stmt   = { "invariant:" ~ expression }
+temporal_stmt    = { "temporal:" ~ expression }
+assignment       = { dotted_path_or_ident ~ "=" ~ expression }
+
+for_all_stmt   = { "for_all" ~ ident ~ "as" ~ ident ~ ("where" ~ expression)? ~ ":" ~ for_all_tail }
+for_all_tail   = _{ process_block | assignment | expression }
+process_block  = { "{" ~ process_body ~ "}" }
+condition_stmt = { "condition" ~ expression ~ ":" ~ condition_tail }
+condition_tail = _{ process_block | assignment }
+
+// ============================================================
+// EXPRESSIONS — precedence climbing, left-folded in the transformer
+// ============================================================
+
+expression = { or_expr }
+
+or_expr  = { and_expr ~ ("or" ~ and_expr)* }
+and_expr = { cmp_expr ~ ("and" ~ cmp_expr)* }
+cmp_expr = { add_expr ~ (cmp_op ~ add_expr)* }
+add_expr = { mul_expr ~ (add_op ~ mul_expr)* }
+mul_expr = { unary_expr ~ (mul_op ~ unary_expr)* }
+
+unary_expr = _{ temporal_expr | not_expr | atom }
+temporal_expr = { temporal_op ~ unary_expr }
+not_expr      = { "not" ~ unary_expr }
+
+// IMPORTANT: order matters — "==" before "=", "<=" before "<".
+// "in" must not match the prefix of identifiers like "invariant".
+cmp_op      = @{ "==" | "!=" | "<=" | ">=" | "→" | "<" | ">" | "=" | ("in" ~ !(ASCII_ALPHANUMERIC | "_" | "'")) }
+add_op      = @{ "+" | "-" }
+mul_op      = @{ "*" | "/" | "%" }
+temporal_op = @{ "□" | "◇" | "○" | "¬" | "∧" | "∨" }
+
+atom = _{
+    paren_expr
+  | array_expr
+  | for_all_expr
+  | number_expr
+  | string_expr
+  | true_expr
+  | false_expr
+  | path_call_expr
+}
+
+paren_expr  = { "(" ~ expression ~ ")" }
+array_expr  = { "[" ~ (expression ~ ("," ~ expression)*)? ~ "]" }
+number_expr = { number }
+string_expr = { string_literal }
+true_expr   = { "true" }
+false_expr  = { "false" }
+
+for_all_expr = { "for_all" ~ ident ~ "as" ~ ident ~ ("where" ~ expression)? ~ ":" ~ (process_block | expression) }
+
+// path_call_expr covers:
+//   foo                 — bare ident
+//   foo.bar.baz         — dotted path
+//   foo(args)           — function call on ident
+//   foo.bar(args)       — function call on dotted path
+// Compound-atomic so the dots and identifiers are glued.
+path_call_expr = ${ ident ~ ("." ~ ident)* ~ call_tail? }
+call_tail      = !{ "(" ~ (expression ~ ("," ~ expression)*)? ~ ")" }
+
+// ============================================================
+// TYPES
+// ============================================================
+
+type_expr    = _{ generic_type | array_type | named_type }
+generic_type = { ident ~ "<" ~ type_expr ~ ">" }
+array_type   = { "[" ~ type_expr ~ (";" ~ number)? ~ "]" }
+named_type   = { ident }
+
+// ============================================================
+// CONSTRAINTS
+// ============================================================
+
+constraint       = _{ range_constraint | enum_constraint }
+range_constraint = { "[" ~ expression ~ ".." ~ expression ~ "]" }
+enum_constraint  = { "{" ~ expression ~ ("," ~ expression)* ~ "}" }
+default_value    = { "=" ~ expression }
+
+// ============================================================
+// META
+// ============================================================
+
+meta_brackets  = { "[" ~ meta_pair_list? ~ "]" }
+meta_pair_list = { meta_pair ~ ("," ~ meta_pair)* }
+meta_pair      = { ident ~ ":" ~ expression }
+
+// ============================================================
+// LISTS & PATHS
+// ============================================================
+
+typed_field_list = { typed_field ~ ("," ~ typed_field)* }
+typed_field      = { ident ~ ":" ~ type_expr }
+ident_list       = { ident ~ ("," ~ ident)* }
+
+// Compound atomic: no whitespace around dots.
+dotted_path_or_ident = ${ ident ~ ("." ~ ident)* }
+dotted_path          = ${ ident ~ ("." ~ ident)+ }
+
+// ============================================================
+// TERMINALS
+// ============================================================
+
+// Allow an optional trailing prime (foo') for "next value" notation.
+ident          = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* ~ "'"? }
+number         = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+string_literal = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }

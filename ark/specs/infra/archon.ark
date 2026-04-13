@@ -1,0 +1,627 @@
+// Archon — AI Coding Workflow Engine (https://github.com/coleam00/Archon)
+//
+// Open-source harness builder for AI coding. Превращает AI-ассистированную
+// разработку в детерминированный, воспроизводимый процесс через YAML-воркфлоу.
+//
+// Архитектура — 4 слоя:
+//   1. Platform Adapters — входные каналы (Web, CLI, Telegram, Slack, Discord, GitHub)
+//   2. Orchestrator      — роутинг сообщений, контекст, сессии
+//   3. Execution         — Command Handler + Workflow Executor + AI Clients
+//   4. Data              — SQLite/Postgres, 7 таблиц
+//
+// Каждый слой — остров. Общение через bridge с явным контрактом.
+
+import stdlib.types
+
+// ============================================================
+// ТИПЫ (локальные для Archon)
+// ============================================================
+
+enum Platform       { web, cli, telegram, slack, discord, github_webhook }
+enum NodeKind       { bash, ai, test, git, loop, branch, parallel }
+enum RunStatus      { queued, running, completed, failed, cancelled }
+enum AIModel        { claude, codex }
+enum WorkflowEvent  { started, node_started, node_completed, run_completed, run_failed }
+
+struct Message {
+  platform:    Platform,
+  session_id:  Uint64,
+  user:        String,
+  body:        String,
+  timestamp:   Uint64
+}
+
+struct WorkflowSpec {
+  name:        String,
+  path:        Path,           // .archon/workflows/*.yaml
+  nodes:       [NodeKind],     // DAG в декларативном виде
+  entrypoint:  String
+}
+
+struct WorkflowRun {
+  id:          Uint64,
+  workflow:    String,
+  session_id:  Uint64,
+  status:      RunStatus,
+  worktree:    Path,
+  started_at:  Uint64,
+  finished_at: Uint64
+}
+
+struct ExecContext {
+  run_id:      Uint64,
+  worktree:    Path,
+  codebase_id: Uint64,
+  model:       AIModel
+}
+
+struct ToolCall {
+  name:     String,
+  args:     [String: String],
+  output:   String,
+  ok:       Bool
+}
+
+// ============================================================
+// АБСТРАКЦИИ — контракты слоёв
+// ============================================================
+
+abstraction PlatformAdapter {
+  // Любой входной канал принимает внешнее событие и нормализует
+  // его в единый Message для оркестратора.
+  @in{ external_event: String }
+  #process[]{
+    requires: platform.authenticated
+  }
+  @out[guaranteed: true]{ msg: Message }
+
+  invariant: msg.session_id > 0
+}
+
+abstraction ExecutionNode {
+  // Любой узел воркфлоу — детерминированный или AI — принимает
+  // контекст и возвращает результат, пригодный для DAG-планировщика.
+  @in{ ctx: ExecContext }
+  #process[]{
+    requires: ctx.worktree.exists
+  }
+  @out[]{ result: TaskResult }
+
+  invariant: result.status in {done, failed}
+}
+
+abstraction AIClient {
+  // Клиент к LLM. Важно: каждый запрос — fresh context window.
+  @in{ ctx: ExecContext, prompt: String, tools: [ToolCall] }
+  #process[]{
+    requires: prompt.length > 0
+  }
+  @out[]{ response: String, calls: [ToolCall] }
+
+  temporal: □(request.sent → ◇ response.received)
+}
+
+abstraction IsolationEnv {
+  // Изолированная среда выполнения — git worktree на запуск.
+  @in{ codebase: Path, branch: String }
+  #process[]{}
+  @out[guaranteed: true]{ worktree: Path }
+
+  invariant: worktree != codebase     // всегда отдельное место
+}
+
+// ============================================================
+// КЛАСС 1. Platform Adapters
+// ============================================================
+
+class WebAdapter : PlatformAdapter {
+  $data port: Int [1..65535] = 3000
+  $data connected_sessions: Int [0..10000] = 0
+
+  @in{ http_request: String, ws_frame: String }
+
+  #process[strategy: code, priority: 20]{
+    description: "Real-time chat over WebSocket + REST dashboard"
+    pre: connected_sessions < 10000
+    msg' = normalize_http(http_request, ws_frame)
+    connected_sessions' = connected_sessions + 1
+  }
+
+  @out[guaranteed: true]{ msg: Message }
+}
+
+class CLIAdapter : PlatformAdapter {
+  @in{ argv: [String], stdin: String }
+
+  #process[strategy: code, priority: 20]{
+    description: "Local terminal entry point (archon serve | archon run ...)"
+    msg' = parse_argv(argv, stdin)
+  }
+
+  @out[guaranteed: true]{ msg: Message }
+}
+
+class TelegramAdapter : PlatformAdapter {
+  $data bot_token: String = ""
+
+  @in{ update_json: String }
+
+  #process[strategy: code, priority: 15, condition: bot_token != ""]{
+    description: "Telegram Bot API long-poll / webhook"
+    msg' = parse_telegram_update(update_json)
+  }
+
+  @out[]{ msg: Message }
+}
+
+class SlackAdapter : PlatformAdapter {
+  $data app_token: String = ""
+
+  @in{ event_payload: String }
+
+  #process[strategy: code, priority: 15, condition: app_token != ""]{
+    description: "Slack Events API, /slash commands"
+    msg' = parse_slack_event(event_payload)
+  }
+
+  @out[]{ msg: Message }
+}
+
+class DiscordAdapter : PlatformAdapter {
+  $data gateway_token: String = ""
+
+  @in{ gateway_frame: String }
+
+  #process[strategy: code, priority: 15, condition: gateway_token != ""]{
+    description: "Discord Gateway WebSocket"
+    msg' = parse_discord_frame(gateway_frame)
+  }
+
+  @out[]{ msg: Message }
+}
+
+class GitHubWebhookAdapter : PlatformAdapter {
+  $data secret: String = ""
+
+  @in{ webhook_body: String, signature: String }
+
+  #process[strategy: verified, priority: 15]{
+    description: "Verify HMAC, dispatch push/PR/issue events"
+    pre:  verify_hmac(webhook_body, signature, secret)
+    msg' = parse_github_event(webhook_body)
+    post: msg'.session_id > 0
+  }
+
+  @out[guaranteed: true]{ msg: Message }
+}
+
+island PlatformAdapters {
+  strategy: code
+  description: "All inbound channels. Normalize external events into Message stream."
+
+  memory: { arena(2MB, per_frame) }
+
+  contains: [WebAdapter, CLIAdapter, TelegramAdapter,
+             SlackAdapter, DiscordAdapter, GitHubWebhookAdapter]
+
+  @in{ external: String }
+  @out[]{ msg_stream: [Message] }
+
+  #process[strategy: code, priority: 100]{
+    description: "Fan-in: route external event to the right adapter"
+    for_all contains as a:
+      condition a.accepts(external):
+        msg_stream' = msg_stream + [a.process(external)]
+  }
+}
+
+// ============================================================
+// КЛАСС 2. Orchestrator
+// ============================================================
+
+class Session {
+  $data id:          Uint64
+  $data platform:    Platform
+  $data codebase_id: Uint64
+  $data active:      Bool = true
+  $data last_msg_at: Uint64 = 0
+
+  @in{ msg: Message }
+
+  #process[strategy: code, priority: 50]{
+    pre:  active
+    last_msg_at' = msg.timestamp
+  }
+
+  @out[]{ context: ExecContext }
+
+  invariant: id > 0
+  temporal: □(active → ◇ last_msg_at > 0)
+}
+
+class Router {
+  $data sessions: [Session] = []
+
+  @in{ msg: Message }
+
+  #process[strategy: code, priority: 90]{
+    description: "Find or create session, attach context, dispatch"
+    pre: msg.user != ""
+    // slash-команды идут в CommandHandler, иначе — в WorkflowExecutor
+    condition msg.body.starts_with("/"):
+      dispatch_to(CommandHandler, msg)
+    condition not msg.body.starts_with("/"):
+      dispatch_to(WorkflowExecutor, msg)
+  }
+
+  @out[]{ routed: Message, ctx: ExecContext }
+
+  invariant: sessions.length >= 0
+}
+
+island OrchestratorCore {
+  strategy: code
+  description: "Central router + session manager. Owns conversation state."
+
+  memory: { pool(Session, max: 10000), arena(8MB, persistent) }
+
+  contains: [Session, Router]
+
+  $data active_sessions: Int [0..10000] = 0
+
+  @in{ msg_stream: [Message] }
+  @out[]{ work_requests: [TaskRequest] }
+
+  #process[strategy: code, priority: 90]{
+    description: "Main routing loop"
+    for_all msg_stream as m:
+      Router.process(m)
+  }
+
+  invariant: active_sessions <= 10000
+  temporal: □(msg.received → ◇ work_requests.dispatched)
+}
+
+// ============================================================
+// КЛАСС 3. Execution Layer
+// ============================================================
+
+class CommandHandler : ExecutionNode {
+  $data registry: [String] = ["help", "status", "run", "list", "cancel"]
+
+  @in{ ctx: ExecContext, cmd: String, args: [String] }
+
+  #process[strategy: code, priority: 80]{
+    description: "Slash-command dispatch"
+    pre:  cmd in registry
+    result' = execute_builtin(cmd, args, ctx)
+    post: result'.status in {done, failed}
+  }
+
+  @out[guaranteed: true]{ result: TaskResult }
+}
+
+class ClaudeClient : AIClient {
+  $data model_id: String = "claude-opus-4-6"
+  $data tools_enabled: Bool = true
+
+  @in{ ctx: ExecContext, prompt: String, tools: [ToolCall] }
+
+  #process[strategy: code, priority: 50]{
+    description: "Primary AI backend. Fresh context per node invocation."
+    pre: prompt.length > 0
+    response' = call_anthropic_api(model_id, prompt, tools)
+    calls'    = extract_tool_calls(response')
+  }
+
+  @out[]{ response: String, calls: [ToolCall] }
+}
+
+class CodexClient : AIClient {
+  $data model_id: String = "gpt-5-codex"
+
+  @in{ ctx: ExecContext, prompt: String, tools: [ToolCall] }
+
+  #process[strategy: code, priority: 50]{
+    description: "Alternative AI backend (Codex)"
+    pre: prompt.length > 0
+    response' = call_openai_api(model_id, prompt, tools)
+    calls'    = extract_tool_calls(response')
+  }
+
+  @out[]{ response: String, calls: [ToolCall] }
+}
+
+class BashNode : ExecutionNode {
+  @in{ ctx: ExecContext, script: String }
+
+  #process[strategy: code, priority: 100]{
+    description: "Deterministic shell step (highest priority — no AI)"
+    pre:  script.length > 0
+    pre:  ctx.worktree.exists
+    result' = run_shell(script, cwd: ctx.worktree)
+  }
+
+  @out[]{ result: TaskResult }
+}
+
+class GitNode : ExecutionNode {
+  @in{ ctx: ExecContext, op: String }
+
+  #process[strategy: code, priority: 100]{
+    description: "git add/commit/push/branch inside worktree"
+    pre: op in {"add", "commit", "push", "branch", "checkout", "merge"}
+    result' = run_git(op, cwd: ctx.worktree)
+  }
+
+  @out[]{ result: TaskResult }
+}
+
+class TestNode : ExecutionNode {
+  @in{ ctx: ExecContext, runner: String }
+
+  #process[strategy: code, priority: 90]{
+    description: "Run project test suite, return pass/fail artifact"
+    result' = run_tests(runner, cwd: ctx.worktree)
+    post:    result'.status in {done, failed}
+  }
+
+  @out[guaranteed: true]{ result: TaskResult }
+}
+
+class AINode : ExecutionNode {
+  $data client: AIClient
+
+  @in{ ctx: ExecContext, prompt_template: String }
+
+  #process[strategy: code, priority: 50]{
+    description: "LLM step — last resort, only when reasoning is required"
+    pre: prompt_template.length > 0
+    rendered = render_prompt(prompt_template, ctx)
+    response = client.process(ctx, rendered, available_tools())
+    result'  = wrap_as_task_result(response)
+  }
+
+  @out[]{ result: TaskResult }
+}
+
+class WorkflowExecutor {
+  $data loaded: [WorkflowSpec] = []    // .archon/workflows/defaults/*.yaml
+  $data running: [WorkflowRun] = []
+
+  @in{ ctx: ExecContext, workflow_name: String }
+
+  #process[strategy: code, priority: 70]{
+    description: "Load YAML DAG, schedule nodes, respect dependencies"
+    pre: workflow_name in loaded.map(w -> w.name)
+    pre: ctx.worktree.exists
+
+    spec = loaded.find(workflow_name)
+    run  = create_run(spec, ctx)
+    running' = running + [run]
+
+    // DAG walk: sequential deps + parallel branches + loops/conditions
+    for_all spec.nodes as n in topo_order:
+      condition n.kind in {bash, test, git, branch, loop, parallel}:
+        n.process(ctx)
+      condition n.kind = ai:
+        n.process(ctx)          // приоритет ниже — fallback
+
+    post: run.status in {completed, failed, cancelled}
+  }
+
+  @out[guaranteed: true]{ run: WorkflowRun, events: [WorkflowEvent] }
+
+  invariant: running.length <= 1000
+  temporal: □(run.started → ◇ run.finished_at > 0)
+}
+
+island ExecutionEngine {
+  strategy: code
+  description: "DAG workflow runner + deterministic nodes + AI fallback."
+
+  memory: { pool(WorkflowRun, max: 1000), arena(64MB, per_frame) }
+
+  contains: [CommandHandler,
+             BashNode, GitNode, TestNode, AINode,
+             ClaudeClient, CodexClient,
+             WorkflowExecutor]
+
+  @in{ work_requests: [TaskRequest] }
+  @out[]{ run_results: [TaskResult], events: [WorkflowEvent] }
+
+  #process[strategy: code, priority: 70]{
+    description: "Main execution loop — drains work queue"
+    for_all work_requests as req:
+      condition req.kind = script:
+        BashNode.process(req)
+      condition req.kind = verify:
+        TestNode.process(req)
+      condition req.kind = codegen:
+        WorkflowExecutor.process(req)
+      condition req.kind = agent:
+        AINode.process(req)
+  }
+}
+
+// ============================================================
+// КЛАСС 4. Isolation
+// ============================================================
+
+class GitWorktreeIsolation : IsolationEnv {
+  $data root:    Path = ".archon/worktrees/"
+  $data max_concurrent: Int [1..256] = 64
+  $data active:  Int [0..256] = 0
+
+  @in{ codebase: Path, branch: String }
+
+  #process[strategy: code, priority: 100]{
+    description: "git worktree add — dedicated dir per WorkflowRun"
+    pre:  active < max_concurrent
+    pre:  codebase.is_git_repo
+    worktree' = git_worktree_add(codebase, branch, root)
+    active'   = active + 1
+    post: worktree'.exists
+  }
+
+  @out[guaranteed: true]{ worktree: Path }
+
+  invariant: active <= max_concurrent
+  temporal: □(worktree.created → ◇ worktree.removed)   // GC on completion
+}
+
+island IsolationLayer {
+  strategy: code
+  description: "Per-run git worktrees. Enables safe parallel workflow runs."
+
+  memory: { arena(4MB, persistent) }
+  contains: [GitWorktreeIsolation]
+
+  @in{ runs: [WorkflowRun] }
+  @out[]{ envs: [Path] }
+
+  #process[strategy: code, priority: 95]{
+    for_all runs as r:
+      envs' = envs + [GitWorktreeIsolation.process(r.codebase, r.branch)]
+  }
+}
+
+// ============================================================
+// КЛАСС 5. Data Layer (7 таблиц)
+// ============================================================
+
+class Codebase       { $data id: Uint64  $data path: Path    $data default_branch: String }
+class Conversation   { $data id: Uint64  $data platform: Platform }
+class SessionRow     { $data id: Uint64  $data codebase_id: Uint64  $data active: Bool }
+class WorkflowRunRow { $data id: Uint64  $data workflow: String  $data status: RunStatus }
+class IsolationRow   { $data id: Uint64  $data run_id: Uint64  $data worktree: Path }
+class MessageRow     { $data id: Uint64  $data session_id: Uint64  $data body: String }
+class EventRow       { $data id: Uint64  $data run_id: Uint64  $data kind: WorkflowEvent }
+
+island DataLayer {
+  strategy: code
+  description: "SQLite or Postgres. 7 core tables. Single source of historical truth."
+
+  memory: { arena(32MB, persistent) }
+
+  contains: [Codebase, Conversation, SessionRow, WorkflowRunRow,
+             IsolationRow, MessageRow, EventRow]
+
+  $data backend: String {sqlite, postgres} = "sqlite"
+
+  @in{ write_ops: [TaskResult], event_stream: [WorkflowEvent] }
+  @out[]{ ack: Bool }
+
+  #process[strategy: code, priority: 100]{
+    description: "Persist everything. Stream events back to platforms."
+    pre: backend in {"sqlite", "postgres"}
+    for_all write_ops as op:
+      persist(op, backend)
+    for_all event_stream as e:
+      persist_event(e, backend)
+    ack' = true
+  }
+
+  invariant: contains.length = 7
+}
+
+// ============================================================
+// МОСТЫ — явные контракты между островами
+// ============================================================
+
+bridge Adapters_to_Orchestrator {
+  from: PlatformAdapters.@out.msg_stream
+  to:   OrchestratorCore.@in.msg_stream
+  contract {
+    type_match: true
+    invariant: all(msg_stream, m -> m.session_id > 0)
+    temporal: latency <= 1 tick
+  }
+}
+
+bridge Orchestrator_to_Execution {
+  from: OrchestratorCore.@out.work_requests
+  to:   ExecutionEngine.@in.work_requests
+  contract {
+    type_match: true
+    invariant: all(work_requests, r -> r.kind in {script, codegen, verify, agent})
+    temporal: latency <= 2 tick
+  }
+}
+
+bridge Execution_to_Isolation {
+  from: ExecutionEngine.@out.run_results
+  to:   IsolationLayer.@in.runs
+  contract {
+    type_match: true
+    invariant: all(runs, r -> r.worktree != null)
+  }
+}
+
+bridge Execution_to_Data {
+  from: ExecutionEngine.@out.events
+  to:   DataLayer.@in.event_stream
+  contract {
+    type_match: true
+    temporal: □(event.emitted → ◇ event.persisted)
+  }
+}
+
+bridge Data_to_Adapters {
+  from: DataLayer.@out.ack
+  to:   PlatformAdapters.@in.external   // stream updates back to user channels
+  contract {
+    type_match: true
+    temporal: □(run.completed → ◇ user_notified)
+  }
+}
+
+// ============================================================
+// ВЕРИФИКАЦИЯ — инварианты всей системы
+// ============================================================
+
+verify Archon {
+
+  // 1. Любое внешнее событие либо обрабатывается, либо явно отклоняется.
+  check no_message_lost:
+    for_all Message as m:
+      □(m.received → ◇ (m.routed or m.rejected))
+
+  // 2. Каждый WorkflowRun получает изолированный worktree —
+  //    никогда не пишем в общий codebase напрямую.
+  check isolation_enforced:
+    for_all WorkflowRun as r:
+      r.worktree != Codebase.path
+
+  // 3. Параллельные запуски не превышают лимит worktrees.
+  check worktree_cap:
+    GitWorktreeIsolation.active <= GitWorktreeIsolation.max_concurrent
+
+  // 4. Приоритет детерминизма: если задача может быть выполнена
+  //    Bash/Git/Test-узлом (priority: 100), AI-узел не вызывается.
+  //    Фундаментальный принцип Archon — "make AI coding deterministic".
+  check determinism_first:
+    for_all TaskRequest as req:
+      (req.kind in {script, codegen, verify}) →
+        (selected_node(req).priority >= 80)
+
+  // 5. Все 7 таблиц существуют и заполняются.
+  check data_schema_complete:
+    DataLayer.contains.length = 7
+
+  // 6. Любой завершённый run рано или поздно попадает в DataLayer.
+  check eventual_persistence:
+    for_all WorkflowRun as r:
+      □(r.status = completed → ◇ EventRow.has(r.id, run_completed))
+
+  // 7. Каждое сообщение из внешнего канала в итоге видно пользователю
+  //    обратно (echo loop через Data_to_Adapters bridge).
+  check end_to_end_echo:
+    for_all Message as m:
+      □(m.received → ◇ m.acknowledged)
+
+  // 8. Никакого deadlock в роутинге.
+  check no_routing_deadlock:
+    for_all Session as s:
+      exists transition t: pre(t, s)
+}

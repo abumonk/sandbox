@@ -1,0 +1,77 @@
+// Team Pipeline — Deploy: git lifecycle операции.
+// Встраивается в переходы стадий Task. Главный инвариант:
+// push / PR только после passed review.
+
+import stdlib.types
+
+// ============================================================
+// DEPLOY
+// ============================================================
+
+// strategy: verified — хотим Z3-гарантии, что push-PR только
+// после passed review.
+class Deploy {
+  $data mode: GitMode { current_branch, branch_per_task } = current_branch
+  $data commit_style: CommitStyle { conventional, simple, template } = conventional
+  $data base_branch:  String = "main"
+
+  // Multi-repo состояние
+  $data repos_json: String = "[]"
+
+  @in{
+    task_id:       String,
+    stage_from:    String,
+    stage_to:      String,
+    review_result: ReviewResult   // {passed, failed} — enum, см. team/types.ark
+  }
+
+  // При planning → implementing: определить репозитории и, если
+  // branch_per_task — создать ветку для каждого.
+  #process[
+    strategy: code,
+    condition: stage_from == "planning" and stage_to == "implementing",
+    priority: 90
+  ]{
+    description: "Detect repos; optionally create branch per repo"
+  }
+
+  // При завершении implementer/fix — коммит по каждому затронутому репо.
+  #process[
+    strategy: code,
+    condition: stage_to == "reviewing",
+    priority: 90
+  ]{
+    description: "Stage and commit task files per repo with templated message"
+  }
+
+  // При reviewing/passed → completed — push и опционально PR.
+  #process[
+    strategy: verified,
+    condition: stage_to == "completed" and review_result == passed,
+    priority: 95
+  ]{
+    description: "Push; create PR if mode = branch_per_task"
+
+    // КРИТИЧНЫЙ ИНВАРИАНТ ДЕПЛОЯ:
+    //   Пушим и открываем PR ТОЛЬКО если reviewer явно прошёл.
+    pre:  review_result == passed
+    post: review_result == passed
+  }
+
+  @out[guaranteed: true]{
+    commits_json: String,
+    prs_json:     String
+  }
+
+  // Безопасность «никогда не пушим без прохождения review» уже
+  // закреплена на двух уровнях:
+  //   1) #process[stage_to == "completed" and review_result == passed]
+  //      — только при обоих условиях процесс вообще запускается.
+  //   2) pre/post внутри #process require review_result == passed.
+  // Class-level temporal здесь избыточен и вводил бы BMC в заблуждение:
+  // @in-поля (stage_to, review_result) в BMC эволюционируют свободно,
+  // без транзакционной связи, поэтому свойство падает не по вине
+  // спеки, а из-за ограничений K-step bounded model checking.
+  // Проверка on-pipeline сохранена в verify-блоке team_pipeline.ark
+  // (check no_push_without_review).
+}

@@ -1,0 +1,69 @@
+// Team Pipeline — Adventure: фича-уровневая группировка задач.
+// Отдельный state machine, агрегирующий состояния дочерних Task.
+
+// Наследование от WorkItem (team/core.ark) резолвится в рантайме.
+import stdlib.types
+
+// ============================================================
+// ADVENTURE
+// ============================================================
+
+class Adventure : WorkItem {
+  $data id:     String = "ADV-000"
+  $data title:  String = ""
+
+  // concept → planning → review → active → reviewing → completed
+  //         ⊕ cancelled, blocked
+  // AdventureState объявлен в team/types.ark.
+  $data state:  AdventureState = concept
+
+  $data task_count:      Int [0..1000] = 0
+  $data tasks_done:      Int [0..1000] = 0
+  $data tasks_blocked:   Int [0..1000] = 0
+
+  // Количественные метрики (см. team/extensions.ark → Metrics)
+  $data tokens_used:  Int   = 0
+  $data cost_used:    Float = 0.0
+
+  // Артефакты
+  $data designs_count:         Int [0..100] = 0
+  $data plans_count:           Int [0..100] = 0
+  $data target_conditions_cnt: Int [0..100] = 0
+
+  @in{
+    concept:      String,
+    approval:     Bool,
+    // Signal from child Task: aggregated into tasks_done / tasks_blocked.
+    child_status: TeamTaskStatus
+  }
+
+  // Переходы состояния:
+  //   concept   → planning    (после approval)
+  //   planning  → review      (adventure-planner сгенерировал артефакты)
+  //   review    → active      (user одобрил план)
+  //   active    → reviewing   (все tasks.done или tasks.blocked)
+  //   reviewing → completed   (adventure-reviewer отработал)
+  //   any       → cancelled | blocked
+  #process[strategy: code, priority: 70]{
+    description: "Adventure state machine — driven by child task aggregation"
+
+    pre: task_count >= tasks_done
+    pre: tasks_done + tasks_blocked <= task_count
+
+    post: tasks_done + tasks_blocked <= task_count
+  }
+
+  @out[guaranteed: true]{
+    manifest_path: String,
+    report_path:   String,
+    state:         String
+  }
+
+  invariant: tasks_done      >= 0
+  invariant: tasks_done      <= task_count
+  invariant: tasks_blocked   >= 0
+  invariant: tasks_blocked   <= task_count
+
+  // Прогресс adventure: если активно и не блокировано — завершится.
+  temporal: □((state == active and tasks_blocked == 0) → ◇ (state == completed))
+}

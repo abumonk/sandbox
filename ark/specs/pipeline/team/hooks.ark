@@ -1,0 +1,63 @@
+// Team Pipeline — Hooks: декларативные событийные правила.
+// Hook — правило, которое lead проверяет в точке жизненного цикла.
+// mode: enforce блокирует, advisory предлагает, always только логирует.
+
+import stdlib.types
+
+// ============================================================
+// HOOKS
+// ============================================================
+
+abstraction Hook {
+  $data event: HookEvent {
+    PreToolUse, PostToolUse, SubagentStop,
+    StageTransition, TaskCompleted, InstructionsLoaded
+  } = PreToolUse
+
+  $data mode: HookMode { enforce, advisory, always } = advisory
+
+  @in{ context: String }
+
+  #process[strategy: code, priority: 99]{
+    description: "Evaluate hook rule before/after lifecycle event"
+    pre: true
+  }
+
+  @out[]{ allow: Bool, note: String }
+
+  // В режиме enforce hook должен выдать детерминированное решение.
+  // (Тип HookMode уже гарантирует membership — повторно выражаем явно.)
+  invariant: mode == enforce or mode == advisory or mode == always
+}
+
+class WorkdirEnforceHook : Hook {
+  $data event: HookEvent { PreToolUse, PostToolUse, SubagentStop,
+                           StageTransition, TaskCompleted,
+                           InstructionsLoaded } = PreToolUse
+  $data mode: HookMode { enforce, advisory, always } = enforce
+
+  @in{ context: String }
+
+  #process[strategy: code, priority: 99]{
+    description: "Block file ops outside project root"
+    pre: true
+    post: true
+  }
+
+  @out[guaranteed: true]{ allow: Bool, note: String }
+}
+
+class MetricsHook : Hook {
+  $data event: HookEvent { PreToolUse, PostToolUse, SubagentStop,
+                           StageTransition, TaskCompleted,
+                           InstructionsLoaded } = SubagentStop
+  $data mode: HookMode { enforce, advisory, always } = always
+
+  @in{ context: String }
+
+  #process[strategy: code, priority: 99]{
+    description: "Record tokens/cost/time per subagent run"
+  }
+
+  @out[guaranteed: true]{ allow: Bool, note: String }
+}

@@ -1,0 +1,10 @@
+[package]
+name = "ark-verify"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+ark-dsl = { path = "../dsl" }
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true

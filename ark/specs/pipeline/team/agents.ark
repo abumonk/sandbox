@@ -1,0 +1,142 @@
+// Team Pipeline — конкретные агенты.
+// Planner, Implementer, Reviewer, Researcher, LeadAgent.
+// Наследуются от абстракции Agent (team/core.ark).
+
+// Наследование от Agent (team/core.ark) резолвится в рантайме,
+// когда корневой team_pipeline.ark импортирует оба файла.
+import stdlib.types
+
+// ============================================================
+// АГЕНТЫ
+// ============================================================
+
+class Planner : Agent {
+  $data role:      String = "planner"
+  $data model:     String = "opus"
+  $data memory:    String = "project"
+  $data max_turns: Int [1..100] = 30
+
+  @in{ prompt: String, task_ref: String }
+
+  #process[strategy: agent, priority: 50]{
+    description: "Read task, explore codebase, produce design + target files"
+    pre: task_ref != ""
+    // Выход: design doc в .agent/designs/, acceptance criteria в task.md
+  }
+
+  @out[guaranteed: true]{
+    result:    String,   // "ready" | "blocked_on_question"
+    log_lines: String,
+    tokens:    Int,
+    cost:      Float
+  }
+}
+
+class Implementer : Agent {
+  $data role:      String = "implementer"
+  $data model:     String = "sonnet"
+  $data memory:    String = "project"
+  $data max_turns: Int [1..100] = 50
+
+  @in{ prompt: String, task_ref: String, review_ref: String }
+
+  // Основной режим: пишет код, гоняет билд и тесты.
+  #process[
+    strategy: agent,
+    condition: review_ref == "",
+    priority: 50
+  ]{
+    description: "Write code, run build, run tests, set status ready"
+    pre: task_ref != ""
+  }
+
+  // Fix-режим: адресует замечания reviewer.
+  #process[
+    strategy: agent,
+    condition: review_ref != "",
+    priority: 51
+  ]{
+    description: "Address reviewer feedback; bumps task.iterations"
+    pre: review_ref != ""
+  }
+
+  @out[guaranteed: true]{
+    result:    String,   // "ready"
+    log_lines: String,
+    tokens:    Int,
+    cost:      Float
+  }
+}
+
+class Reviewer : Agent {
+  $data role:      String = "reviewer"
+  $data model:     String = "opus"
+  $data memory:    String = "project"
+  $data max_turns: Int [1..100] = 30
+
+  @in{ prompt: String, task_ref: String }
+
+  #process[strategy: agent, priority: 50]{
+    description: "Run tests, validate acceptance criteria, write report"
+    pre: task_ref != ""
+    // Никогда не пишет и не чинит код — только отчёт.
+  }
+
+  @out[guaranteed: true]{
+    result:    String,        // report file ref (path to review report)
+    verdict:   ReviewResult,  // {passed, failed} — typed review outcome
+    log_lines: String,
+    tokens:    Int,
+    cost:      Float
+  }
+}
+
+class Researcher : Agent {
+  $data role:      String = "researcher"
+  $data model:     String = "opus"
+  $data memory:    String = "project"
+  $data max_turns: Int [1..100] = 30
+
+  @in{ prompt: String, task_ref: String }
+
+  #process[strategy: agent, priority: 40]{
+    description: "Extract patterns/decisions into .agent/knowledge/"
+    pre: task_ref != ""
+  }
+
+  @out[guaranteed: true]{
+    result:    String,
+    log_lines: String,
+    tokens:    Int,
+    cost:      Float
+  }
+}
+
+// Lead — оркестратор, а не исполнитель: выбирает действие,
+// продвигает стадии, спавнит агентов. Детерминирован где возможно.
+class LeadAgent : Agent {
+  $data role:       String = "lead"
+  $data model:      String = "sonnet"
+  $data memory:     String = "project"
+
+  @in{ prompt: String, task_ref: String, state_ref: String }
+
+  // Сначала пытается всё решить детерминированно: чтение файлов,
+  // продвижение стадии, запуск git-операций.
+  #process[strategy: code, priority: 100]{
+    description: "Deterministic orchestration — state read/write, stage advance"
+    pre: state_ref != ""
+  }
+
+  // Когда нужно реальное рассуждение — делегирует решение.
+  #process[strategy: agent, priority: 50]{
+    description: "On-demand report, decision routing, conflict resolution"
+  }
+
+  @out[guaranteed: true]{
+    result:    String,
+    log_lines: String,
+    tokens:    Int,
+    cost:      Float
+  }
+}

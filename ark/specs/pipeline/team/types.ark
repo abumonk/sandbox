@@ -1,0 +1,123 @@
+// Team Pipeline — централизованные определения enum-типов.
+// Вынесено сюда, чтобы (а) переиспользовать одну и ту же декларацию
+// между task/adventure/hooks/deploy/extensions и (б) дать верификатору
+// знание доменов enum-полей (он читает top-level enum_def и использует
+// как background facts при проверке инвариантов).
+//
+// ВАЖНО: team-pipeline намеренно использует одинаковые имена вариантов
+// в разных enum'ах (cancelled в TaskStage и TeamTaskStatus; completed
+// в TaskStage и AdventureState). Это не ошибка — семантически они
+// означают одно и то же состояние. Верификатор коллапсирует
+// одноимённые варианты в одну int-константу, что делает вывод вида
+// `(stage == completed) → □(stage == completed)` корректным.
+
+// ============================================================
+// TASK
+// ============================================================
+
+// Стадия задачи: полный lifecycle от планирования до завершения.
+// Терминальные: completed, cancelled. Блокирующее: blocked.
+enum TaskStage {
+  planning,
+  implementing,
+  reviewing,
+  fixing,
+  completed,
+  researching,
+  blocked,
+  cancelled
+}
+
+// Рабочий статус внутри стадии.
+// Имя специфичное для команды, чтобы не конфликтовать с
+// stdlib.TaskStatus = {pending, running, done, failed}.
+enum TeamTaskStatus {
+  pending,
+  in_progress,
+  ready,
+  passed,
+  failed,
+  blocked_on_question,
+  done,
+  cancelled
+}
+
+// ============================================================
+// ADVENTURE
+// ============================================================
+
+enum AdventureState {
+  concept,
+  planning,
+  review,
+  active,
+  reviewing,
+  completed,
+  cancelled,
+  blocked
+}
+
+// ============================================================
+// DEPLOY
+// ============================================================
+
+enum GitMode {
+  current_branch,
+  branch_per_task
+}
+
+enum CommitStyle {
+  conventional,
+  simple,
+  template
+}
+
+// Результат ревью — явный enum вместо String,
+// чтобы верификатор мог доказать temporal-инвариант
+// «push/PR только после passed review».
+enum ReviewResult {
+  passed,
+  failed
+}
+
+// ============================================================
+// HOOKS
+// ============================================================
+
+enum HookEvent {
+  PreToolUse,
+  PostToolUse,
+  SubagentStop,
+  StageTransition,
+  TaskCompleted,
+  InstructionsLoaded
+}
+
+enum HookMode {
+  enforce,
+  advisory,
+  always
+}
+
+// ============================================================
+// EXTENSIONS
+// ============================================================
+
+enum BudgetScope {
+  task,
+  adventure,
+  pipeline
+}
+
+enum ProofMethod {
+  check_test,
+  check_verify,
+  manual,
+  metric
+}
+
+enum TCStatus {
+  pending,
+  satisfied,
+  violated
+}

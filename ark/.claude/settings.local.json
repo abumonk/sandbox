@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python ark.py verify specs/meta/backlog.ark)",
+      "Bash(python ark.py parse specs/meta/backlog.ark)",
+      "Bash(python -c \"import sys, json; d=json.loads\\(sys.stdin.read\\(\\)\\); items=d['items']; print\\(f'Total items: {len\\(items\\)}'\\); print\\('Task classes:', sum\\(1 for i in items if i.get\\('kind'\\)=='class' and i.get\\('extends'\\)=='Task'\\)\\)\")",
+      "Bash(python -c \"import sys, json; d=json.loads\\(sys.stdin.read\\(\\)\\); items=d['items']; kinds={}; [kinds.update\\({i['kind']:kinds.get\\(i['kind'],0\\)+1}\\) for i in items]; print\\(kinds\\)\")",
+      "Bash(python -c ':*)",
+      "Bash(python ark.py verify specs/test_minimal.ark)",
+      "Bash(python ark.py verify specs/game/vehicle_physics.ark)",
+      "Bash(python -m pytest tests/)",
+      "Bash(python ark.py parse specs/game/vehicle_physics.ark)",
+      "Bash(cargo test:*)",
+      "Bash(cargo run:*)",
+      "Bash(python -m pytest tests/ -q)",
+      "Bash(python -m pytest tests/test_class_instance_index.py -v)",
+      "Bash(cargo build:*)",
+      "Bash(python ark.py pipeline specs/test_minimal.ark)",
+      "Bash(python -m pytest tests/test_verify_full_expr.py -v)",
+      "Bash(python -m pytest tests/test_verify_temporal.py -v)",
+      "Bash(python -m pytest tests/test_diff.py -v)",
+      "Bash(python ark.py diff specs/test_minimal.ark specs/test_minimal.ark)",
+      "Bash(python -m pytest tests/test_watch.py -v)",
+      "Bash(python -m pytest tests/test_dispatch.py -v)",
+      "Bash(python ark.py dispatch specs/meta/backlog.ark)",
+      "Bash(wc -l runtime/src/*.rs)"
+    ]
+  }
+}

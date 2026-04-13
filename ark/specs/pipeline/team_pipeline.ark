@@ -1,0 +1,240 @@
+// Team Pipeline — декларативная модель плагина team-pipeline для Claude Code.
+//
+// Корневой (сборочный) файл. Здесь только:
+//   - импорты модулей из team/
+//   - island TeamPipeline (композиция)
+//   - bridge'и между ролями (контракты переходов)
+//   - registry (порядок и фазы)
+//   - verify (инварианты пайплайна целиком)
+//
+// Всё содержательное — в team/*.ark:
+//   team/core.ark       — абстракции WorkItem, Agent, Stage
+//   team/agents.ark     — Planner, Implementer, Reviewer, Researcher, LeadAgent
+//   team/task.ark       — class Task
+//   team/adventure.ark  — class Adventure
+//   team/deploy.ark     — class Deploy (git lifecycle)
+//   team/wrapup.ark     — class Wrapup (/wrapup)
+//   team/hooks.ark      — Hook + WorkdirEnforceHook + MetricsHook
+//   team/extensions.ark — proposed: Budget, Metrics, Scheduler, Messenger,
+//                         CascadeTracker, TargetCondition, TaskDAG,
+//                         Rollback, PermissionAnalyzer, RoleMemory
+//
+// Источник: team-pipeline plugin
+//   agents/*.md, commands/*.md, schema/*.md, README.md.
+
+import stdlib.types
+
+import team.types
+import team.core
+import team.agents
+import team.task
+import team.adventure
+import team.deploy
+import team.wrapup
+import team.hooks
+
+// Расширения — отключи, если нужен чистый спек текущего плагина
+// без proposed-фич:
+import team.extensions
+
+// ============================================================
+// ОСТРОВ — весь team-pipeline как один узел оркестрации
+// ============================================================
+
+island TeamPipeline {
+  strategy: code
+  description: "Stage-based task processing pipeline with planner, implementer, reviewer, researcher, and lead orchestration."
+
+  contains: [
+    Planner, Implementer, Reviewer, Researcher, LeadAgent,
+    Task, Adventure, Deploy, Wrapup,
+    WorkdirEnforceHook, MetricsHook
+  ]
+
+  memory: {
+    pool(Task, 1000),
+    pool(Adventure, 100)
+  }
+
+  $data active_tasks:       Int [0..1000] = 0
+  $data completed_tasks:    Int [0..1000] = 0
+  $data blocked_tasks:      Int [0..1000] = 0
+  $data active_adventures:  Int [0..100]  = 0
+
+  @in{ tick: DeltaTime, user_cmd: String }
+
+  #process[strategy: code, priority: 100]{
+    description: "Main lead loop — read state, evaluate hooks, advance tasks"
+
+    pre: active_tasks >= 0
+    pre: blocked_tasks <= active_tasks
+
+    // Псевдо-логика:
+    //   for_all task in .agent/tasks/:
+    //     hook(StageTransition).evaluate()
+    //     task.process()                     // advance stage
+    //     deploy.process(stage_from, stage_to)
+    //     hook(TaskCompleted).evaluate() if stage == completed
+    //   for_all adv in .agent/adventures/:
+    //     adv.process()                      // aggregate children
+
+    post: completed_tasks >= 0
+    post: blocked_tasks   <= active_tasks
+  }
+
+  @out[guaranteed: true]{
+    pipeline_report: String,
+    dashboard:       String
+  }
+
+  invariant: active_tasks     >= 0
+  invariant: completed_tasks  >= 0
+  invariant: blocked_tasks    <= active_tasks
+  invariant: active_adventures >= 0
+}
+
+// ============================================================
+// МОСТЫ — поток управления между стадиями
+// ============================================================
+
+// Каждый bridge — типизированный контракт перехода между ролями.
+// Contract-инварианты ловят запрещённые переходы ДО рантайма.
+
+bridge Planner_to_Implementer {
+  from: Planner.result
+  to:   Implementer.prompt
+
+  contract {
+    invariant: result == "ready"
+  }
+}
+
+bridge Implementer_to_Reviewer {
+  from: Implementer.result
+  to:   Reviewer.prompt
+
+  contract {
+    invariant: result == "ready"
+  }
+}
+
+// Цикл review → fix → review.
+bridge Reviewer_to_Implementer {
+  from: Reviewer.result
+  to:   Implementer.review_ref
+
+  contract {
+    invariant: result == "failed"
+    // bounded loop ловится в Task.max_iterations и verify.bounded_fix_loop.
+  }
+}
+
+bridge Reviewer_to_Researcher {
+  from: Reviewer.result
+  to:   Researcher.prompt
+
+  contract {
+    invariant: result == "passed"
+  }
+}
+
+// Git-деплой «подключён» к переходу Reviewer → completed.
+// Используем typed verdict, а не строковый result, чтобы temporal
+// инвариант Deploy («push/PR только после passed review») сводился
+// к enum-membership, а не String-домену.
+bridge Reviewer_to_Deploy {
+  from: Reviewer.verdict
+  to:   Deploy.review_result
+
+  contract {
+    invariant: verdict == passed
+  }
+}
+
+// Adventure агрегирует состояния своих тасков: Task.status → Adventure.child_status.
+// Adventure сам увеличивает tasks_done / tasks_blocked на основании
+// сигналов (см. #process в team/adventure.ark).
+bridge Task_to_Adventure {
+  from: Task.status
+  to:   Adventure.child_status
+
+  contract {
+    invariant: status == done or status == cancelled
+  }
+}
+
+// ============================================================
+// РЕЕСТР — порядок и фазы
+// ============================================================
+
+registry TeamPipelineRegistry {
+  // Dev-time оркестрация.
+  register LeadAgent             { phase: dev,    priority: 100 }
+
+  // Стадии задачи (порядок = приоритет выполнения).
+  register Planner               { phase: stage,  priority: 10  }
+  register Implementer           { phase: stage,  priority: 20  }
+  register Reviewer              { phase: stage,  priority: 30  }
+  register Researcher            { phase: stage,  priority: 40  }
+
+  // Сущности состояния.
+  register Task                  { phase: state,  priority: 50  }
+  register Adventure             { phase: state,  priority: 55  }
+
+  // Инфраструктура.
+  register Deploy                { phase: infra,  priority: 90  }
+  register Wrapup                { phase: infra,  priority: 95  }
+  register WorkdirEnforceHook    { phase: infra,  priority: 99  }
+  register MetricsHook           { phase: infra,  priority: 99  }
+}
+
+// ============================================================
+// ВЕРИФИКАЦИЯ — инварианты пайплайна
+// ============================================================
+
+verify TeamPipeline {
+  // 1) Review-fix loop не бесконечен.
+  check bounded_fix_loop:
+    for_all Task as t:
+      t.iterations <= t.max_iterations
+
+  // 2) Бюджеты никогда не превышаются.
+  check token_budget_respected:
+    for_all Task as t:
+      t.tokens_used <= t.token_budget
+
+  check cost_budget_respected:
+    for_all Task as t:
+      t.cost_used <= t.cost_budget
+
+  // 3) Главный security-инвариант деплоя:
+  //    push/PR только после passed review.
+  check no_push_without_review:
+    for_all Deploy as d:
+      (d.stage_to == "completed") → (d.review_result == "passed")
+
+  // 4) Терминальные состояния — поглощающие.
+  check terminal_absorbing:
+    for_all Task as t:
+      (t.stage == completed) → □ (t.stage == completed)
+
+  // 5) Adventure не может отметить больше tasks_done чем всего.
+  check adventure_progress_bounded:
+    for_all Adventure as a:
+      a.tasks_done + a.tasks_blocked <= a.task_count
+
+  // 6) Стадия → агент: каждая стадия имеет ответственного.
+  //    (membership в {planning,…,researching} разворачиваем дизъюнкцией)
+  check stage_has_owner:
+    for_all Task as t:
+      ((t.stage == planning)     or (t.stage == implementing) or
+       (t.stage == reviewing)    or (t.stage == fixing)       or
+       (t.stage == researching))
+        → (t.assignee != "--")
+
+  // 7) Прогресс: живая задача в конце концов завершается.
+  check liveness:
+    for_all Task as t:
+      □(((t.stage != blocked) and (t.stage != cancelled))
+         → ◇ (t.stage == completed))
+}

@@ -1,0 +1,7 @@
+[package]
+name = "ark-codegen"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+ark-dsl = { path = "../dsl" }

@@ -1,0 +1,251 @@
+// ARK DSL Grammar — Lark EBNF
+// Полная грамматика для парсинга .ark файлов
+
+start: (import_stmt | item)*
+
+// ============================================================
+// TOP LEVEL
+// ============================================================
+
+import_stmt: "import" dotted_path
+
+item: abstraction_def
+    | class_def
+    | instance_def
+    | island_def
+    | bridge_def
+    | registry_def
+    | verify_def
+    | primitive_def
+    | struct_def
+    | enum_def
+
+// ============================================================
+// FOUR PRIMITIVES
+// ============================================================
+
+in_port: "@in" "{" typed_field_list "}"
+
+process_rule: "#process" meta_brackets? "{" process_body "}"
+
+out_port: "@out" empty_meta? "{" typed_field_list "}"
+empty_meta: "[" meta_pair_list? "]"
+
+data_field: "$data" IDENT ":" type_expr constraint? default_value?
+
+// ============================================================
+// PROCESS BODY
+// ============================================================
+
+process_body: process_stmt*
+
+process_stmt: pre_stmt
+            | post_stmt
+            | requires_stmt
+            | description_stmt
+            | for_all_stmt
+            | condition_stmt
+            | assignment
+            | expr
+
+pre_stmt: "pre:" expr
+post_stmt: "post:" expr
+requires_stmt: "requires:" expr
+
+// ============================================================
+// ENTITIES
+// ============================================================
+
+abstraction_def: "abstraction" IDENT inherits? "{" entity_body "}"
+class_def: "class" IDENT inherits? "{" entity_body "}"
+
+entity_body: entity_member*
+
+entity_member: in_port
+             | out_port
+             | process_rule
+             | data_field
+             | invariant_stmt
+             | temporal_stmt
+             | description_stmt
+
+instance_def: "instance" IDENT ":" IDENT "{" assignment* "}"
+
+inherits: ":" ident_list
+
+// ============================================================
+// ISLANDS
+// ============================================================
+
+island_def: "island" IDENT "{" island_body "}"
+
+island_body: island_member*
+
+island_member: strategy_stmt
+             | memory_stmt
+             | contains_stmt
+             | description_stmt
+             | in_port
+             | out_port
+             | process_rule
+             | class_def
+             | data_field
+             | invariant_stmt
+             | temporal_stmt
+
+// ============================================================
+// BRIDGES
+// ============================================================
+
+bridge_def: "bridge" IDENT "{" bridge_body "}"
+
+bridge_body: from_stmt to_stmt contract_block?
+
+from_stmt: "from:" dotted_path
+to_stmt: "to:" dotted_path
+
+contract_block: "contract" "{" contract_member* "}"
+contract_member: invariant_stmt | temporal_stmt
+
+// ============================================================
+// REGISTRY
+// ============================================================
+
+registry_def: "registry" IDENT "{" register_stmt* "}"
+register_stmt: "register" IDENT "{" meta_pair_list "}"
+
+// ============================================================
+// VERIFICATION
+// ============================================================
+
+verify_def: "verify" IDENT "{" check_stmt* "}"
+check_stmt: "check" IDENT ":" expr
+
+// ============================================================
+// STDLIB TYPE DECLARATIONS
+// ============================================================
+
+primitive_def: "primitive" IDENT
+
+struct_def: "struct" IDENT "{" struct_field_list? "}"
+struct_field_list: struct_field ("," struct_field)* ","?
+struct_field: IDENT ":" type_expr
+
+enum_def: "enum" IDENT "{" enum_variant_list? "}"
+enum_variant_list: enum_variant ("," enum_variant)* ","?
+enum_variant: IDENT ("(" enum_variant_params ")")?
+enum_variant_params: enum_variant_param ("," enum_variant_param)*
+enum_variant_param: IDENT ":" type_expr -> enum_param_typed
+                  | IDENT                -> enum_param_bare
+
+// ============================================================
+// STATEMENTS
+// ============================================================
+
+strategy_stmt: "strategy:" IDENT
+memory_stmt: "memory:" "{" memory_entry ("," memory_entry)* "}"
+memory_entry: IDENT "(" expr ("," expr)* ")"
+contains_stmt: "contains:" "[" ident_list "]"
+description_stmt: "description:" STRING
+invariant_stmt: "invariant:" expr
+temporal_stmt: "temporal:" expr
+assignment: dotted_path_or_ident "=" expr
+
+// ============================================================
+// EXPRESSIONS
+// ============================================================
+
+?expr: or_expr
+
+?or_expr: and_expr ("or" and_expr)*
+?and_expr: cmp_expr ("and" cmp_expr)*
+?cmp_expr: add_expr (CMP_OP add_expr)*
+?add_expr: mul_expr (ADD_OP mul_expr)*
+?mul_expr: unary_expr (MUL_OP unary_expr)*
+
+?unary_expr: TEMPORAL_OP unary_expr           -> temporal_expr
+           | "not" unary_expr                 -> not_expr
+           | atom
+
+?atom: "true"                                 -> true_expr
+     | "false"                                -> false_expr
+     | "$data" IDENT                          -> data_ref_expr
+     | fn_call
+     | dotted_path                            -> path_expr
+     | IDENT                                  -> ident_expr
+     | NUMBER                                 -> number_expr
+     | STRING                                 -> string_expr
+     | "(" expr ")"                           -> paren_expr
+     | "[" expr_list? "]"                     -> array_expr
+     | for_all_expr
+
+fn_call: dotted_path_or_ident "(" expr_list? ")"
+
+for_all_expr: "for_all" IDENT "as" IDENT ("where" expr)? ":" (expr | "{" process_body "}")
+for_all_stmt: "for_all" IDENT "as" IDENT ("where" expr)? ":" (assignment | "{" process_body "}")
+
+condition_stmt: "condition" expr ":" (assignment | "{" process_body "}")
+
+// ============================================================
+// TYPES
+// ============================================================
+
+type_expr: IDENT "<" type_expr ">"            -> generic_type
+         | "[" type_expr ":" type_expr "]"    -> map_type
+         | "[" type_expr (";" NUMBER)? "]"    -> array_type
+         | "{" ident_list "}"                 -> inline_enum_type
+         | IDENT                              -> named_type
+
+// ============================================================
+// CONSTRAINTS
+// ============================================================
+
+constraint: "[" expr ".." expr "]"            -> range_constraint
+          | "{" expr_list "}"                 -> enum_constraint
+
+default_value: "=" expr
+
+// ============================================================
+// META
+// ============================================================
+
+meta_brackets: "[" meta_pair_list? "]"
+meta_pair_list: meta_pair ("," meta_pair)*
+meta_pair: IDENT ":" expr
+
+// ============================================================
+// LISTS
+// ============================================================
+
+typed_field_list: (typed_field ("," typed_field)*)?
+typed_field: IDENT ":" type_expr
+
+ident_list: IDENT ("," IDENT)*
+expr_list: expr ("," expr)*
+
+dotted_path: IDENT ("." IDENT)+
+dotted_path_or_ident: IDENT ("." IDENT)*
+
+// ============================================================
+// TERMINALS
+// ============================================================
+
+CMP_OP: "==" | "!=" | "<=" | ">=" | "<" | ">" | "in" | "→"
+ADD_OP: "+" | "-"
+MUL_OP: "*" | "/" | "%"
+TEMPORAL_OP: "□" | "◇" | "○" | "¬" | "∧" | "∨"
+
+IDENT: /[a-zA-Z_][a-zA-Z0-9_']*/
+
+NUMBER: /\-?[0-9]+(\.[0-9]+)?/
+
+STRING: "\"" /[^"]*/ "\""
+
+// ============================================================
+// WHITESPACE & COMMENTS
+// ============================================================
+
+%import common.WS
+%ignore WS
+%ignore /\/\/[^\n]*/
+%ignore /\/\*[\s\S]*?\*\//

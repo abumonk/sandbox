@@ -1,0 +1,95 @@
+// Team Pipeline — центральная сущность: задача.
+// Stage machine с инвариантами монотонности и временными
+// свойствами прогресса.
+
+// Наследование от WorkItem (team/core.ark) резолвится в рантайме.
+import stdlib.types
+
+// ============================================================
+// ЗАДАЧА
+// ============================================================
+
+class Task : WorkItem {
+  // --- Идентичность и метаданные ---
+  $data id:       String = "TASK-000"
+  $data title:    String = ""
+  $data tags:     String = ""
+
+  // --- Стадия и статус ---
+  //   planning → implementing → reviewing → fixing → completed → researching
+  //   ⊕ cancelled, blocked
+  // TaskStage объявлен в team/types.ark.
+  $data stage:    TaskStage = planning
+
+  // TeamTaskStatus объявлен в team/types.ark (имя специфичное,
+  // чтобы не конфликтовать со stdlib.TaskStatus).
+  $data status:   TeamTaskStatus = pending
+
+  $data assignee: String = "planner"
+
+  // --- Итерации review → fix → review ---
+  $data iterations:     Int [0..10] = 0
+  $data max_iterations: Int [1..10] = 3
+
+  // --- Бюджеты (см. team/extensions.ark → Budget) ---
+  $data token_budget: Int [0..2000000] = 200000
+  $data cost_budget:  Float [0..1000] = 5.0
+  $data tokens_used:  Int   = 0
+  $data cost_used:    Float = 0.0
+
+  // --- Зависимости и multi-repo ---
+  $data depends_on:  String = ""
+  $data repos_json:  String = "[]"   // [{root, branch, base, files}]
+  $data files:       String = ""
+
+  // --- Связи наверх ---
+  $data adventure_id: String = ""    // пусто если standalone
+
+  @in{ request: String, event: PipelineEvent }
+
+  // Главный процесс задачи — продвижение по стадиям.
+  #process[strategy: code, priority: 80]{
+    description: "Task stage machine — single step of the lead loop"
+
+    pre:  id != "TASK-000"
+    pre:  iterations <= max_iterations
+    pre:  tokens_used <= token_budget
+    pre:  cost_used   <= cost_budget
+
+    // Stage transitions (читать как правила):
+    //   planning/ready          → implementing/in_progress  (assignee=implementer, git.detect)
+    //   implementing/ready      → reviewing/in_progress     (assignee=reviewer, git.commit)
+    //   reviewing/failed        → fixing/in_progress        (iterations+1, OR → blocked)
+    //   fixing/ready            → reviewing/in_progress     (assignee=reviewer, git.commit fix)
+    //   reviewing/passed        → completed/done            (git.push, git.pr, archive, spawn researcher)
+    //   any/blocked_on_question → hold; lead выводит вопрос пользователю
+
+    updated_at' = updated_at + 1
+
+    // Стадия всегда принадлежит enum-типу TaskStage по конструкции $data.
+    // Проверка membership выражается полной дизъюнкцией:
+    post: stage == planning or stage == implementing or stage == reviewing
+       or stage == fixing   or stage == completed    or stage == researching
+       or stage == blocked  or stage == cancelled
+    post: iterations <= max_iterations
+  }
+
+  @out[guaranteed: true]{
+    artifacts: String,          // paths: design, report, archive location
+    status:    TeamTaskStatus,  // current lifecycle status (mirrors $data)
+    log:       String           // append-only lifecycle log
+  }
+
+  // Монотонность: iterations только растёт.
+  invariant: iterations >= 0
+  invariant: iterations <= max_iterations
+  invariant: tokens_used <= token_budget
+  invariant: cost_used   <= cost_budget
+
+  // Терминальность: completed / cancelled — финальные.
+  temporal: □((stage == completed) → □(stage == completed))
+  temporal: □((stage == cancelled) → □(stage == cancelled))
+
+  // Прогресс: если стадия не блок — рано или поздно достигает completed.
+  temporal: □((stage != blocked and stage != cancelled) → ◇ (stage == completed))
+}

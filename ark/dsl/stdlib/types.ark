@@ -1,0 +1,106 @@
+// ARK Standard Library — Types
+// Базовые типы, доступные во всех .ark файлах.
+
+// ============================================================
+// ПРИМИТИВЫ
+// ============================================================
+
+primitive Bool
+primitive Int
+primitive Uint64
+primitive Float
+primitive Float16
+primitive String
+primitive Path
+
+// ============================================================
+// МАТЕМАТИКА
+// ============================================================
+
+struct Vec2 { x: Float, y: Float }
+struct Vec3 { x: Float, y: Float, z: Float }
+struct Vec4 { x: Float, y: Float, z: Float, w: Float }
+struct Quat { x: Float, y: Float, z: Float, w: Float }
+struct Mat4 { data: [Float; 16] }
+struct AABB { min: Vec3, max: Vec3 }
+struct Transform { position: Vec3, rotation: Quat, scale: Vec3 }
+
+// ============================================================
+// ВРЕМЯ
+// ============================================================
+
+struct DeltaTime { seconds: Float, tick: Uint64 }
+
+// ============================================================
+// СТРАТЕГИИ
+// ============================================================
+
+enum Strategy {
+  tensor,        // массовая SoA-обработка
+  code,          // обычная кодогенерация
+  asm_avx2,      // ручной AVX2
+  asm_neon,      // ARM NEON
+  gpu_compute,   // compute shader
+  verified,      // SMT-верифицированный
+  script         // интерпретируемый
+}
+
+// ============================================================
+// ПАМЯТЬ
+// ============================================================
+
+enum MemoryStrategy {
+  pool(entity_type, max_count: Int),
+  arena(size_bytes: Int, lifetime: {persistent, per_frame}),
+  linear,
+  stack
+}
+
+// ============================================================
+// ОРКЕСТРАЦИЯ
+// ============================================================
+
+enum TaskKind     { script, codegen, verify, agent }
+enum TaskStatus   { pending, running, done, failed }
+enum PipelineEvent { manual, file_changed, schedule, dependency }
+
+struct TaskRequest {
+  kind: TaskKind,
+  target: Path,
+  params: [String: String]
+}
+
+struct TaskResult {
+  status: TaskStatus,
+  output: String,
+  artifacts: [Path],
+  duration_ms: Int
+}
+
+struct PipelineStatus {
+  complete: Bool,
+  current_stage: Int,
+  total_stages: Int
+}
+
+// ============================================================
+// СЕТЕВЫЕ ТИПЫ (для MMO-инфраструктуры)
+// ============================================================
+
+struct EntityId  { value: Uint64 }
+struct ServerId  { value: Uint64 }
+struct PlayerId  { value: Uint64 }
+struct WorldPos  { x: Float, y: Float, zone: Int }
+
+// ============================================================
+// АССЕТЫ
+// ============================================================
+
+enum AssetFormat { mesh, texture, audio, animation, material, prefab }
+
+struct Asset {
+  id: String,
+  format: AssetFormat,
+  path: Path,
+  dependencies: [Asset]
+}

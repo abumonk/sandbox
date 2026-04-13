@@ -1,0 +1,64 @@
+// Minimal test — проверка парсера
+
+import stdlib.types
+
+abstraction Movable {
+  @in{ throttle: Float, dt: Float }
+  @out[]{ position: Vec3 }
+  invariant: throttle >= 0
+}
+
+class Vehicle : Movable {
+  $data fuel: Float [0..100] = 50.0
+  $data speed: Float = 0.0
+
+  @in{ throttle: Float, dt: Float }
+
+  #process[strategy: tensor, priority: 10]{
+    pre: fuel > 0
+    speed' = speed + throttle * dt
+    fuel' = fuel - throttle * 0.1 * dt
+    post: fuel' >= 0
+  }
+
+  @out[guaranteed: true]{ speed: Float, fuel: Float }
+
+  invariant: fuel >= 0
+  temporal: □(fuel == 0 → speed == 0)
+}
+
+island VehiclePhysics {
+  strategy: tensor
+  description: "Batch vehicle processing"
+  contains: [Vehicle]
+
+  $data count: Int = 0
+
+  @in{ tick: Float }
+
+  #process[strategy: tensor]{
+    for_all Vehicle as v: {
+      pre: v.fuel > 0
+    }
+  }
+
+  @out[]{ results: Vec3 }
+}
+
+bridge Physics_to_Terrain {
+  from: VehiclePhysics.results
+  to: TerrainSystem.collisions
+
+  contract {
+    invariant: results.valid()
+  }
+}
+
+registry Systems {
+  register VehiclePhysics { phase: runtime, priority: 10 }
+}
+
+verify VehiclePhysics {
+  check fuel_positive: fuel >= 0
+  check speed_bounded: speed <= 100
+}

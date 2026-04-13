@@ -1,0 +1,283 @@
+// Rust port roadmap — задачи переноса Python-инструментов ARK на Rust.
+// Каждая задача — это class, все вместе — island RustPort.
+// Источник истины для backlog'а Priority 5 из CLAUDE.md.
+
+import stdlib.types
+
+// ============================================================
+// КОНТРАКТ — что такое задача pipeline
+// ============================================================
+
+abstraction PipelineTask {
+  $data priority: Int [1..10] = 5
+  $data status:   String = "todo"
+
+  @in{ depends_on: String }
+
+  #process[strategy: code]{
+    pre: priority >= 1
+  }
+
+  @out[]{ artifacts: String, status: String }
+
+  invariant: priority >= 1
+  invariant: priority <= 10
+}
+
+// ============================================================
+// ЗАДАЧА 1 — pest-парсер
+// ============================================================
+
+class PestParserTask : PipelineTask {
+  $data crate:      String = "ark-dsl"
+  $data priority:   Int [1..10] = 1
+  $data status:     String = "todo"
+  $data loc_budget: Int [0..1000] = 600
+
+  @in{ depends_on: String, trigger: DeltaTime }
+
+  #process[strategy: code, priority: 1]{
+    description: "Pest-парсер: связать готовую grammar с AST в lib.rs"
+    pre: loc_budget > 0
+    pre: priority == 1
+
+    // Шаги:
+    //   1) починить dsl/grammar/ark.pest
+    //      — добавить precedence climbing для expression
+    //      — устранить ambiguity в term (ident vs dotted_path)
+    //      — keyword word-boundary guards
+    //   2) реализовать pest → AST конвертер в dsl/src/parse.rs
+    //   3) прогнать на specs/test_minimal.ark
+    //   4) прогнать на specs/game/vehicle_physics.ark
+
+    status = "done"
+
+    post: status == "done"
+    post: loc_budget <= 1000
+  }
+
+  @out[guaranteed: true]{
+    artifacts: String,
+    status:    String
+  }
+
+  invariant: loc_budget <= 1000
+}
+
+// ============================================================
+// ЗАДАЧА 2 — codegen для одного острова
+// ============================================================
+
+class IslandCodegenTask : PipelineTask {
+  $data crate:      String = "ark-codegen"
+  $data priority:   Int [1..10] = 2
+  $data status:     String = "todo"
+  $data target:     String = "VehiclePhysics"
+  $data layout:     String = "soa"
+
+  @in{ depends_on: String, trigger: DeltaTime }
+
+  #process[strategy: code, priority: 2]{
+    description: "Codegen для одного острова — VehiclePhysics.ark → Rust struct + SoA"
+    pre: depends_on == "PestParserTask"
+    pre: priority >= 1
+
+    // Генерируемые файлы:
+    //   generated/rust/vehicle.rs                — struct Vehicle (AoS)
+    //                                              struct VehicleBatch (SoA)
+    //                                              impl VehicleBatch::process_all
+    //   generated/rust/vehiclephysics_island.rs  — struct VehiclePhysicsIsland
+    //                                              impl ::update
+
+    status = "done"
+
+    post: status == "done"
+  }
+
+  @out[guaranteed: true]{
+    artifacts: String,
+    status:    String
+  }
+
+  invariant: priority >= 1
+}
+
+// ============================================================
+// ЗАДАЧА 3 — Z3-верификатор
+// ============================================================
+
+class Z3VerifierTask : PipelineTask {
+  $data crate:     String = "ark-verify"
+  $data priority:  Int [1..10] = 3
+  $data status:    String = "todo"
+  $data backend:   String = "smtlib_text"
+  $data bmc_depth: Int [1..100] = 10
+
+  @in{ depends_on: String, trigger: DeltaTime }
+
+  #process[strategy: verified, priority: 3]{
+    description: "Z3-верификатор: трансляция invariant/temporal блоков в SMT-LIB2"
+    pre: depends_on == "PestParserTask"
+    pre: bmc_depth >= 1
+
+    // Что переводится:
+    //   $data fuel: Float [0..100]   →   (declare-const fuel Real)
+    //                                    (assert (and (>= fuel 0) (<= fuel 100)))
+    //   invariant: fuel >= 0         →   (assert (not (>= fuel 0))) ; поиск контрпримера
+    //   temporal:  □(fuel=0 → ...)   →   bounded model checking на bmc_depth шагов
+    //
+    // Backend "smtlib_text" — генерит .smt2 файл вместо линковки z3-sys:
+    //   - не тянет нативные зависимости libz3
+    //   - легко тестируется через z3 CLI
+
+    status = "done"
+
+    post: status == "done"
+  }
+
+  @out[guaranteed: true]{
+    artifacts: String,
+    status:    String
+  }
+
+  invariant: bmc_depth <= 100
+}
+
+// ============================================================
+// ЗАДАЧА 4 — оркестратор
+// ============================================================
+
+class OrchestratorTask : PipelineTask {
+  $data crate:    String = "ark-orchestrator"
+  $data priority: Int [1..10] = 4
+  $data status:   String = "todo"
+  $data anchor:   String = "specs/root.ark"
+
+  @in{ depends_on: String, trigger: DeltaTime }
+
+  #process[strategy: script, priority: 4]{
+    description: "Оркестратор: root.ark реально запускает pipeline задач"
+    pre: depends_on == "IslandCodegenTask"
+    pre: priority >= 1
+
+    // Что делает оркестратор:
+    //   1) парсит specs/root.ark через ark-dsl
+    //   2) читает registry SystemRegistry, строит DAG задач
+    //      (по полю phase: codegen → verify → runtime)
+    //   3) для каждого зарегистрированного острова вызывает
+    //      ark-codegen и ark-verify
+    //   4) возвращает exit code: 0 если все проверки прошли, 1 иначе
+
+    status = "done"
+
+    post: status == "done"
+  }
+
+  @out[guaranteed: true]{
+    artifacts: String,
+    status:    String
+  }
+
+  invariant: priority == 4
+}
+
+// ============================================================
+// ОСТРОВ — группировка задач Rust-порта
+// ============================================================
+
+island RustPort {
+  strategy: code
+  description: "Перенос Python-инструментов ARK на Rust"
+
+  contains: [PestParserTask, IslandCodegenTask, Z3VerifierTask, OrchestratorTask]
+
+  $data completed: Int [0..4] = 0
+
+  @in{ tick: DeltaTime }
+
+  #process[strategy: code, priority: 10]{
+    description: "Исполнение задач в топологическом порядке зависимостей"
+
+    // Топология (→ читать как «зависит от»):
+    //
+    //   PestParserTask
+    //         │
+    //         ├── IslandCodegenTask ───┐
+    //         │                        │
+    //         └── Z3VerifierTask       │
+    //                                  ▼
+    //                          OrchestratorTask
+
+    pre: completed >= 0
+    completed = completed + 1
+    post: completed <= 4
+  }
+
+  @out[guaranteed: true]{ artifacts: String }
+
+  invariant: completed >= 0
+  invariant: completed <= 4
+}
+
+// ============================================================
+// МОСТЫ — потоки артефактов между задачами
+// ============================================================
+
+bridge Parser_to_Codegen {
+  from: PestParserTask.artifacts
+  to:   IslandCodegenTask.depends_on
+
+  contract {
+    invariant: depends_on == "PestParserTask"
+  }
+}
+
+bridge Parser_to_Verifier {
+  from: PestParserTask.artifacts
+  to:   Z3VerifierTask.depends_on
+
+  contract {
+    invariant: depends_on == "PestParserTask"
+  }
+}
+
+bridge Codegen_to_Orchestrator {
+  from: IslandCodegenTask.artifacts
+  to:   OrchestratorTask.depends_on
+
+  contract {
+    invariant: depends_on == "IslandCodegenTask"
+  }
+}
+
+// ============================================================
+// РЕЕСТР — порядок и фазы выполнения
+// ============================================================
+
+registry RustPortPipeline {
+  register PestParserTask    { phase: build,   priority: 1 }
+  register IslandCodegenTask { phase: build,   priority: 2 }
+  register Z3VerifierTask    { phase: verify,  priority: 3 }
+  register OrchestratorTask  { phase: runtime, priority: 4 }
+}
+
+// ============================================================
+// ВЕРИФИКАЦИЯ — топологические инварианты над портом
+// ============================================================
+
+verify RustPort {
+  check parser_before_codegen:
+    PestParserTask.priority < IslandCodegenTask.priority
+
+  check parser_before_verifier:
+    PestParserTask.priority < Z3VerifierTask.priority
+
+  check codegen_before_orchestrator:
+    IslandCodegenTask.priority < OrchestratorTask.priority
+
+  check verifier_before_orchestrator:
+    Z3VerifierTask.priority < OrchestratorTask.priority
+
+  check all_tasks_bounded:
+    PestParserTask.priority >= 1 and OrchestratorTask.priority <= 10
+}

@@ -1,0 +1,125 @@
+// ARK Root — якорная точка всей системы.
+// Это первый файл, который загружается. Он определяет
+// корневую структуру и порядок инициализации.
+// Всё остальное растёт от этого узла.
+
+import stdlib.types
+import stdlib.strategies
+
+// ============================================================
+// КОРНЕВОЙ УЗЕЛ
+// ============================================================
+
+island Root {
+  strategy: code
+  description: "Entry point. Owns the tick loop and system registry."
+
+  $data systems: [Island] = []
+  $data tick_count: Uint64 = 0
+  $data running: Bool = true
+
+  @in{ clock: DeltaTime }
+
+  #process[priority: 0]{
+    // Главный цикл — проходит по всем зарегистрированным
+    // островам в порядке приоритета и вызывает их update.
+    for_all systems as s in priority_order:
+      s.@in <- gather_inputs(s)
+      s.process()
+      dispatch_outputs(s.@out)
+    tick_count' = tick_count + 1
+  }
+
+  @out[]{ frame_complete: Bool }
+}
+
+// ============================================================
+// ОРКЕСТРАТОР (dev-time)
+// ============================================================
+
+island Orchestrator {
+  strategy: code
+  description: "Manages build, codegen, verification, agent tasks."
+
+  // --- Task routing ---
+
+  class Task {
+    $data kind: TaskKind {script, codegen, verify, agent}
+    $data status: TaskStatus {pending, running, done, failed}
+    $data priority: Int [0..100]
+
+    @in{ request: TaskRequest }
+
+    // Приоритет 1: простые операции без AI
+    #process[
+      strategy: code,
+      condition: kind in {script, codegen},
+      priority: 100
+    ]{
+      description: "File ops, codegen, formatting — no AI needed"
+      execute_deterministic(request)
+    }
+
+    // Приоритет 2: верификация (SMT solver, не AI)
+    #process[
+      strategy: code,
+      condition: kind = verify,
+      priority: 80
+    ]{
+      description: "Z3/SMT check — deterministic, no AI"
+      execute_verification(request)
+    }
+
+    // Приоритет 3: только если нужно рассуждение
+    #process[
+      strategy: code,
+      condition: kind = agent,
+      priority: 50
+    ]{
+      description: "Design decisions, spec authoring — requires AI"
+      delegate_to_agent(request)
+    }
+
+    @out[]{ result: TaskResult }
+  }
+
+  // --- Pipeline ---
+
+  class Pipeline {
+    $data stages: [Task]
+    $data current: Int = 0
+
+    @in{ trigger: PipelineEvent }
+
+    #process[strategy: code]{
+      pre:  current < stages.length
+      // выполняет текущую стадию, переходит к следующей
+      stages[current].process()
+      condition stages[current].status = done:
+        current' = current + 1
+    }
+
+    @out[]{ pipeline_status: PipelineStatus }
+
+    invariant: current <= stages.length
+    temporal: □(trigger.received → ◇ pipeline_status.complete)
+  }
+}
+
+// ============================================================
+// РЕЕСТР ОСТРОВОВ
+// ============================================================
+
+// Каждый остров регистрируется здесь.
+// Порядок — это порядок инициализации и приоритет обновления.
+
+registry SystemRegistry {
+  // --- Dev-time islands ---
+  register Orchestrator      { phase: dev, priority: 0 }
+
+  // --- Runtime islands (заполняется по мере разработки) ---
+  // register VehiclePhysics  { phase: runtime, priority: 10 }
+  // register TerrainSystem   { phase: runtime, priority: 20 }
+  // register NetworkLayer    { phase: runtime, priority: 5 }
+  // register AudioMixer      { phase: runtime, priority: 30 }
+}

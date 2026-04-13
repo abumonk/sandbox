@@ -1,0 +1,741 @@
+// ARK Backlog — meta-spec, который ОЖИВЛЯЕТ список задач из CLAUDE.md.
+//
+// Идея: backlog — это не markdown-список, а остров в ARK DSL:
+//   - Task       — одна работа с приоритетом/фазой/статусом
+//   - Subagent   — исполнитель (general-purpose, Explore, reviewer...)
+//   - Backlog    — остров-диспетчер, держит задачи и очередь
+//   - Dispatch   — bridge из Task.artifacts в Subagent.assignment
+//   - BacklogPlan — registry фаз
+//   - ArkBacklog — живой instance, на котором идёт исполнение
+//
+// Стратегия: script — оркестрация, не SIMD. Приоритет 100 в Tick.
+//
+// После parse → verify → оркестратор поднимает ArkBacklog и прогоняет
+// каждую ready-задачу через назначенного субагента (в терминах
+// Claude Code это Task tool с соответствующим subagent_type).
+
+import stdlib.types
+
+// ============================================================
+// СУБАГЕНТ — исполнитель задачи
+// ============================================================
+
+abstraction Subagent {
+  $data name:     String
+  $data role:     String = "executor"
+  $data capacity: Int [0..10] = 1
+  $data busy:     Int [0..10] = 0
+
+  @in{ assignment: String, task_id: String }
+
+  #process[strategy: script]{
+    description: "Принять задачу: увеличить счётчик busy если есть ёмкость"
+    pre: busy < capacity
+    busy' = busy + 1
+    post: busy <= capacity
+  }
+
+  @out[]{ report: String, status: String }
+
+  invariant: busy >= 0
+  invariant: busy <= capacity
+}
+
+class CodeSubagent : Subagent {
+  $data name:     String = "general-purpose"
+  $data role:     String = "executor"
+  $data capacity: Int [0..10] = 4
+  $data busy:     Int [0..10] = 0
+
+  #process[strategy: script, priority: 100]{
+    description: "Claude Code general-purpose агент: берёт ready-задачу и пишет код"
+    pre: busy < capacity
+    busy' = busy + 1
+    post: busy <= capacity
+  }
+
+  @out[guaranteed: true]{ report: String, status: String }
+}
+
+class ExploreSubagent : Subagent {
+  $data name:     String = "Explore"
+  $data role:     String = "explorer"
+  $data capacity: Int [0..10] = 2
+  $data busy:     Int [0..10] = 0
+
+  #process[strategy: script, priority: 90]{
+    description: "Быстрый поиск по коду — отвечает на вопросы, не правит"
+    pre: busy < capacity
+    busy' = busy + 1
+    post: busy <= capacity
+  }
+}
+
+class ReviewSubagent : Subagent {
+  $data name:     String = "feature-dev:code-reviewer"
+  $data role:     String = "reviewer"
+  $data capacity: Int [0..10] = 2
+  $data busy:     Int [0..10] = 0
+
+  #process[strategy: script, priority: 80]{
+    description: "Ревью пул-реквеста: выдаёт только high-priority замечания"
+    pre: busy < capacity
+    busy' = busy + 1
+    post: busy <= capacity
+  }
+}
+
+class PlanSubagent : Subagent {
+  $data name:     String = "Plan"
+  $data role:     String = "planner"
+  $data capacity: Int [0..10] = 1
+  $data busy:     Int [0..10] = 0
+
+  #process[strategy: script, priority: 95]{
+    description: "Архитектор: проектирует план реализации задачи"
+    pre: busy < capacity
+    busy' = busy + 1
+    post: busy <= capacity
+  }
+}
+
+// ============================================================
+// ЗАДАЧА — единица работы в бэклоге
+// ============================================================
+
+abstraction Task {
+  $data id:       String
+  $data title:    String
+  $data priority: Int [1..5] = 3
+  $data status:   String = "todo"
+  $data phase:    String = "backlog"
+  $data agent:    String = "general-purpose"
+
+  @in{ depends_on: String, tick: DeltaTime }
+
+  #process[strategy: script]{
+    pre: priority >= 1
+    pre: priority <= 5
+  }
+
+  @out[]{ artifacts: String, status: String }
+
+  invariant: priority >= 1
+  invariant: priority <= 5
+}
+
+// ============================================================
+// ЗАДАЧИ PRIORITY 1 — Парсер / Codegen глубина
+// ============================================================
+
+class ProcessBodiesTask : Task {
+  $data id:       String = "p1-process-bodies"
+  $data title:    String = "Codegen: генерация тел #process"
+  $data priority: Int [1..5] = 1
+  $data status:   String = "done"
+  $data phase:    String = "codegen"
+  $data agent:    String = "general-purpose"
+
+  #process[strategy: script, priority: 1]{
+    description: "Сгенерировать тела #process из pre/post/assignment"
+    pre: priority == 1
+    post: status == "done"
+  }
+
+  @out[guaranteed: true]{ artifacts: String, status: String }
+}
+
+class SoAProcessAllTask : Task {
+  $data id:       String = "p1-soa-process-all"
+  $data title:    String = "Codegen: SoA batch process_all() с формулами"
+  $data priority: Int [1..5] = 1
+  $data status:   String = "done"
+  $data phase:    String = "codegen"
+
+  #process[strategy: script, priority: 1]{
+    description: "VehicleBatch::process_all считает формулы, не TODO"
+    post: status == "done"
+  }
+}
+
+class DefaultValuesTask : Task {
+  $data id:       String = "p1-default-values"
+  $data title:    String = "Codegen: default values в конструкторах Rust"
+  $data priority: Int [1..5] = 1
+  $data status:   String = "done"
+  $data phase:    String = "codegen"
+  $data agent:    String = "general-purpose"
+
+  #process[strategy: script, priority: 1]{
+    description: "Из $data name: T = expr — импл Vehicle::new() + impl Default"
+    post: status == "done"
+  }
+}
+
+// Новая P1 — раздельное хранение класса и его инстансов.
+// Сейчас ArkFile.items держит классы и instance'ы в одном плоском списке,
+// связь Instance→Class только по строке class_name. Добавить индекс.
+class SeparateInstanceStorageTask : Task {
+  $data id:       String = "p1-separate-instance-storage"
+  $data title:    String = "Parser: раздельное хранение класса и его инстансов"
+  $data priority: Int [1..5] = 1
+  $data status:   String = "done"
+  $data phase:    String = "parser"
+  $data agent:    String = "general-purpose"
+
+  #process[strategy: script, priority: 1]{
+    description: "Pure-additive индекс. Python: ArkFile.classes / .instances / .island_classes + helper instances_of(). Rust: classes_index / instances_index / island_classes_index (BTreeMap<String, usize>) + ArkFile::instances_of / ::class. Island-nested классы в отдельной per-island map (no collision). 4+4=8 тестов (pytest 42/42, cargo dsl 10/10)."
+    pre: priority == 1
+    post: status == "done"
+  }
+}
+
+class ParserRobustnessTask : Task {
+  $data id:       String = "p1-parser-errors"
+  $data title:    String = "Парсер: позиции ошибок, graceful recovery"
+  $data priority: Int [1..5] = 2
+  $data status:   String = "done"
+  $data phase:    String = "parser"
+  $data agent:    String = "general-purpose"
+
+  #process[strategy: script, priority: 2]{
+    description: "ArkParseError с snippet/caret/expected, ark.py exit=2, 3 новых теста (28/28 зелёных)"
+    post: status == "done"
+  }
+}
+
+class ImportResolutionTask : Task {
+  $data id:       String = "p1-import-resolution"
+  $data title:    String = "Парсер: загрузка stdlib/types.ark при import"
+  $data priority: Int [1..5] = 1
+  $data status:   String = "done"
+  $data phase:    String = "parser"
+  $data agent:    String = "general-purpose"
+
+  #process[strategy: script, priority: 1]{
+    description: "import resolver готов (91 loc). stdlib skip'ается — см. StdlibKeywordsTask"
+    post: status == "done"
+  }
+}
+
+// Добыто ImportResolutionTask'ом: stdlib/types.ark использует
+// primitive/struct/enum, которых нет в ark_grammar.lark. Новый бэклог-айтем.
+class StdlibKeywordsTask : Task {
+  $data id:       String = "p1-stdlib-keywords"
+  $data title:    String = "Grammar: добавить primitive/struct/enum для stdlib/types.ark"
+  $data priority: Int [1..5] = 2
+  $data status:   String = "done"
+  $data phase:    String = "parser"
+  $data agent:    String = "general-purpose"
+
+  #process[strategy: script, priority: 2]{
+    description: "stdlib=29 items (7 primitive+16 struct+6 enum), резолвер светится"
+    post: status == "done"
+  }
+}
+
+class UnitTestsTask : Task {
+  $data id:       String = "p1-unit-tests"
+  $data title:    String = "Тесты: unit tests для каждого типа .ark сущностей"
+  $data priority: Int [1..5] = 2
+  $data status:   String = "done"
+  $data phase:    String = "tests"
+  $data agent:    String = "general-purpose"
+
+  #process[strategy: script, priority: 2]{
+    description: "25 pytest-тестов зелёных. Попутно выявили 2 бага в парсере (fixed)."
+    post: status == "done"
+  }
+}
+
+// Обнаружено UnitTestsTask'ом: bridge_body и atom-order для true/false
+// были багами, скрытыми отсутствием тестов. Фиксы landed в tick 2.
+class ParserBugfixTask : Task {
+  $data id:       String = "p1-parser-bugfixes"
+  $data title:    String = "Parser: bridge_body flatten + true/false перед IDENT"
+  $data priority: Int [1..5] = 1
+  $data status:   String = "done"
+  $data phase:    String = "parser"
+
+  #process[strategy: script, priority: 1]{
+    description: "Два pre-existing бага вскрытых UnitTestsTask'ом, пофикшены in-line"
+    post: status == "done"
+  }
+}
+
+// Обнаружено при регрессионной проверке verify: specs/game/vehicle_physics.ark
+// падает на "unexpected character ']'" в строке `#process[]{`. Грамматика
+// требует хотя бы один meta-атрибут между квадратных скобок.
+//
+// Fix: meta_brackets: "[" meta_pair_list? "]" — сделан опциональным.
+// Builder в ark_parser.py уже готов (items[0] if items else []).
+// Добавлены 2 unit-теста: пустые скобки и отсутствие скобок вообще.
+// vehicle_physics.ark теперь парсится дальше (упирается в RequiresStmtTask).
+class EmptyProcessMetaTask : Task {
+  $data id:       String = "p1-empty-process-meta"
+  $data title:    String = "Parser: разрешить пустой #process[]{} без meta"
+  $data priority: Int [1..5] = 2
+  $data status:   String = "done"
+  $data phase:    String = "parser"
+  $data agent:    String = "general-purpose"
+
+  #process[strategy: script, priority: 2]{
+    description: "meta_pair_list сделан опциональным, 2 новых теста (30/30 зелёных). vehicle_physics.ark двигается дальше по парсеру."
+    pre: priority == 2
+    post: status == "done"
+  }
+
+  @out[guaranteed: true]{ artifacts: String, status: String }
+}
+
+// Обнаружено EmptyProcessMetaTask'ом: после разблокировки пустых [],
+// vehicle_physics.ark упёрся в `requires:` — ключевое слово не
+// поддержано в process_body. Семантически это precondition, поэтому
+// простейшее решение — сделать алиас для `pre:`.
+//
+// Fix: grammar добавлен `requires_stmt: "requires:" expr`; builder
+// возвращает {_stmt: "pre", expr} — landing в тот же pre-список.
+// Unit-тест test_process_rule_requires_is_alias_for_pre зелёный.
+// vehicle_physics.ark теперь упирается в следующий баг: `$data fuel`
+// как префикс выражения (DataPrefixExprTask — ещё не заведён).
+class RequiresStmtTask : Task {
+  $data id:       String = "p1-requires-stmt"
+  $data title:    String = "Parser: поддержать `requires:` как алиас для `pre:`"
+  $data priority: Int [1..5] = 2
+  $data status:   String = "done"
+  $data phase:    String = "parser"
+  $data agent:    String = "general-purpose"
+
+  #process[strategy: script, priority: 2]{
+    description: "requires_stmt landing в pre-список, 1 новый тест (31/31 зелёных)"
+    pre: priority == 2
+    post: status == "done"
+  }
+
+  @out[guaranteed: true]{ artifacts: String, status: String }
+}
+
+// Обнаружено RequiresStmtTask'ом: после разблокировки `requires:`,
+// vehicle_physics.ark упирается в `$data fuel > 0` — префикс `$data`
+// перед идентификатором в выражении. В декларациях `$data` — ключевое
+// слово, в выражениях парсер его не знает. Решение: принять `$data IDENT`
+// как явное указание на data-поле, алиас голого IDENT.
+//
+// Fix: atom расширен `"$data" IDENT -> data_ref_expr`; builder lower'ит
+// в обычный ident-expr — `$data x` и `x` дают идентичный AST. Добавлены
+// 2 теста (alias + equivalence). vehicle_physics.ark теперь упирается
+// в `throttle in [0..1]` — range-syntax внутри выражения, отдельный баг.
+class DataPrefixExprTask : Task {
+  $data id:       String = "p1-data-prefix-expr"
+  $data title:    String = "Parser: `$data IDENT` в выражениях как алиас IDENT"
+  $data priority: Int [1..5] = 2
+  $data status:   String = "done"
+  $data phase:    String = "parser"
+  $data agent:    String = "general-purpose"
+
+  #process[strategy: script, priority: 2]{
+    description: "$data IDENT → ident_expr, 2 новых теста (33/33 зелёных)"
+    pre: priority == 2
+    post: status == "done"
+  }
+
+  @out[guaranteed: true]{ artifacts: String, status: String }
+}
+
+// ============================================================
+// ЗАДАЧИ PRIORITY 2 — верификация глубина
+// ============================================================
+
+class VerifyFullExprTask : Task {
+  $data id:       String = "p2-verify-full-expr"
+  $data title:    String = "Verify: трансляция ВСЕХ выражений #process в Z3"
+  $data priority: Int [1..5] = 2
+  $data status:   String = "done"
+  $data phase:    String = "verify"
+  $data agent:    String = "general-purpose"
+
+  #process[strategy: script, priority: 2]{
+    description: "MVP: _translate_body_equations() для assignment-стейтментов, @in/@out port fields типизируются через _register_port_fields, новый post-obligation чек (pre ∧ body ⇒ post). Condition/for_all/calls — skip silently. Поймал реальный баг в Backlog spec (post: in_flight <= total ← должно быть in_flight'). 5 новых тестов (47/47 pytest, 57/57 verify)."
+    pre: priority == 2
+    post: status == "done"
+  }
+
+  @out[]{ artifacts: String, status: String }
+}
+
+class BridgeContractTask : Task {
+  $data id:       String = "p2-bridge-contract"
+  $data title:    String = "Verify: проверка bridge contracts (type matching портов)"
+  $data priority: Int [1..5] = 2
+  $data status:   String = "done"
+  $data phase:    String = "verify"
+  $data agent:    String = "general-purpose"
+
+  #process[strategy: script, priority: 2]{
+    description: "verify_bridges: type-match через inherits walk, island как endpoint, graceful UNKNOWN для missing. 5 новых тестов (38/38). Contract invariant SMT-check оставлен на VerifyFullExprTask."
+    pre: priority == 2
+    post: status == "done"
+  }
+
+  @out[guaranteed: true]{ artifacts: String, status: String }
+}
+
+class TemporalBMCTask : Task {
+  $data id:       String = "p2-temporal-bmc"
+  $data title:    String = "Verify: temporal properties через bounded model checking"
+  $data priority: Int [1..5] = 3
+  $data status:   String = "done"
+  $data phase:    String = "verify"
+  $data agent:    String = "Plan"
+
+  #process[strategy: script, priority: 3]{
+    description: "MVP: real state unrolling, K=10 default. _bmc_symbols() делает step-indexed Z3 vars (x_s0..x_sK), transitions из body equations, frame axioms для неассайненных $data, initial defaults, background range per-step. Statuses: PASS_BOUNDED/FAIL (с failing step index) / UNKNOWN. Только □ поддержан; ◇/○/U → UNKNOWN. 5 тестов (52/52 pytest, 57/57 verify)."
+    pre: priority == 3
+    post: status == "done"
+  }
+}
+
+class ArkDiffTask : Task {
+  $data id:       String = "p2-ark-diff"
+  $data title:    String = "ark diff — семантический diff двух версий .ark"
+  $data priority: Int [1..5] = 3
+  $data status:   String = "done"
+  $data phase:    String = "tools"
+  $data agent:    String = "general-purpose"
+
+  #process[strategy: script, priority: 3]{
+    description: "tools/diff/ark_diff.py: diff_ast() выдаёт Change-records (added/removed/modified), render() — human-readable. Матчинг по (kind, name) без rename detection. Per-type shallow diff: class/abstraction (data_fields, ports, process count, inv/temp counts, inherits), instance (class, assignments), island (strategy, contains, fields), bridge (endpoints, contract), registry (entries + meta), verify (target, checks). CLI: `ark diff old.ark new.ark [--json]`. 6 тестов (58/58 pytest)."
+    pre: priority == 3
+    post: status == "done"
+  }
+}
+
+// ============================================================
+// ЗАДАЧИ PRIORITY 3 — оркестратор
+// ============================================================
+
+class OrchestratorRootTask : Task {
+  $data id:       String = "p3-orchestrator-root"
+  $data title:    String = "Оркестратор: чтение root.ark → execution pipeline"
+  $data priority: Int [1..5] = 2
+  $data status:   String = "done"
+  $data phase:    String = "runtime"
+  $data agent:    String = "general-purpose"
+
+  #process[strategy: script, priority: 2]{
+    description: "Rust-оркестратор (option B): phase-grouped DAG. ExecutionDag {phases: [(phase, tasks sorted by priority asc/name)], edges: [bridges]}. Канонический ранг dev<build<init<runtime<teardown<other. CLI печатает фазы + bridges. 3 новых теста (6/6)."
+    pre: priority == 2
+    post: status == "done"
+  }
+}
+
+class FileWatcherTask : Task {
+  $data id:       String = "p3-file-watcher"
+  $data title:    String = "Оркестратор: file watcher → auto re-verify → auto re-codegen"
+  $data priority: Int [1..5] = 3
+  $data status:   String = "done"
+  $data phase:    String = "runtime"
+  $data agent:    String = "general-purpose"
+
+  #process[strategy: script, priority: 3]{
+    description: "tools/watch/ark_watch.py: stdlib-only polling Watcher (mtime_ns, 300ms default), нулевые внешние deps. poll_once() unit-тестируемый, watch(on_change, stop=...) блокирующий цикл с выходным predicate для тестов. CLI `ark watch <spec>` с initial-run + KeyboardInterrupt graceful exit. Full re-run не impact-selective (selective — follow-up). 5 тестов (63/63 pytest)."
+    pre: priority == 3
+    post: status == "done"
+  }
+}
+
+class ClaudeTaskBridgeTask : Task {
+  $data id:       String = "p3-claude-task-bridge"
+  $data title:    String = "Оркестратор: задачи для Claude Code через .ark спеки"
+  $data priority: Int [1..5] = 3
+  $data status:   String = "done"
+  $data phase:    String = "runtime"
+  $data agent:    String = "Plan"
+
+  #process[strategy: script, priority: 3]{
+    description: "tools/dispatch/ark_dispatch.py: collect_tasks/collect_subagents через direct-inherit Task/Subagent, find_ready фильтрует status=todo и сортирует по priority, assign_subagent матчит task.agent к subagent.name (первично) или .role. build_plan возвращает structured DTO, render — human output. Pure-data: не спавнит агентов (subagents invoked через Task tool только внутри живой Claude Code-сессии), но даёт reproducible spec-driven mapping. CLI `ark dispatch backlog.ark [--json]`. 5 тестов (68/68 pytest)."
+    pre: priority == 3
+    post: status == "done"
+  }
+}
+
+// ============================================================
+// ЗАДАЧИ PRIORITY 4 — runtime прототип
+// ============================================================
+
+class WgpuWindowTask : Task {
+  $data id:       String = "p4-wgpu-window"
+  $data title:    String = "Runtime: wgpu + winit окно"
+  $data priority: Int [1..5] = 4
+  $data status:   String = "done"
+  $data phase:    String = "runtime"
+  $data agent:    String = "general-purpose"
+
+  #process[strategy: script, priority: 4]{
+    description: "runtime/src/window.rs: WindowConfig (title/size/vsync/resizable + builder + aspect_ratio), WindowApp trait (on_init/on_frame/on_close, default impls), run_stub (инвокнёт init+close, без frames), run_frames (детерминистический N-tick runner для ECS-тестов без дисплея). Pure-Rust скаффолдинг без winit/wgpu deps — реальный event loop вынесен в follow-up WgpuBackendTask (compile-time cost ~500 крейтов слишком дорог для auto-tick chain). 5 тестов (28/28 cargo runtime + workspace)."
+    pre: priority == 4
+    post: status == "done"
+  }
+}
+
+// Добавлено WgpuWindowTask'ом: реальный wgpu+winit backend отложен из
+// WgpuWindowTask из-за compile-time cost. Этот таск плагинит реальный
+// event loop под ту же API (WindowConfig/WindowApp), не меняя сигнатур.
+class WgpuBackendTask : Task {
+  $data id:       String = "p4-wgpu-backend"
+  $data title:    String = "Runtime: реальный wgpu+winit backend (plug into run_stub)"
+  $data priority: Int [1..5] = 4
+  $data status:   String = "todo"
+  $data phase:    String = "runtime"
+  $data agent:    String = "general-purpose"
+
+  #process[strategy: script, priority: 4]{
+    description: "Добавить winit 0.29 + wgpu 22 как deps. Заменить run_stub() реальным event loop: создать EventLoop, Window, wgpu Instance/Device/Queue/Surface, clear color, вызов on_frame на RedrawRequested. Оставить run_frames как headless-test-runner. Сохранить сигнатуры run_stub/run_frames — существующие тесты не должны сломаться."
+    pre: priority == 4
+    post: status == "done"
+  }
+}
+
+class HecsEcsTask : Task {
+  $data id:       String = "p4-hecs-ecs"
+  $data title:    String = "Runtime: hecs ECS интеграция с codegen output"
+  $data priority: Int [1..5] = 4
+  $data status:   String = "done"
+  $data phase:    String = "runtime"
+  $data agent:    String = "general-purpose"
+
+  #process[strategy: script, priority: 4]{
+    description: "hecs = 0.10 добавлен в workspace. runtime/src/ecs.rs: EcsWorld newtype façade над hecs::World с spawn/despawn/count<C>/len/is_empty/for_each_mut<C>. Сохранён inner()/inner_mut() escape hatch для прямого hecs API. Codegen-output структуры работают как hecs Component без обёрток (archetype-based ECS, plain struct = component). 5 тестов: пустой world, single-component spawn, multi-component tuple, despawn returns bool, for_each_mut как system tick (33/33 cargo)."
+    pre: priority == 4
+    post: status == "done"
+  }
+}
+
+class IslandTickLoopTask : Task {
+  $data id:       String = "p4-island-tick-loop"
+  $data title:    String = "Runtime: загрузка island → tick loop из root.ark"
+  $data priority: Int [1..5] = 4
+  $data status:   String = "done"
+  $data phase:    String = "runtime"
+  $data agent:    String = "Plan"
+
+  #process[strategy: script, priority: 4]{
+    description: "runtime/src/runtime.rs: Runtime { slots: [IslandSlot{name,priority,tick_count}], frame, ecs }. from_ark_file() собирает островные слоты из Item::Island, подтягивает priority из registry (fallback 999), сортирует (priority asc, name asc). tick() инкрементит frame + каждый слот. Runtime implements WindowApp — run_frames() из WgpuWindowTask'а драйвит его без реального окна. Body-level #process execution отложено (нужен codegen integration). 5 тестов (38/38 cargo: 5 window + 5 ecs + 5 runtime + 5 orchestrator + 10 dsl + 5 codegen + 2 verify + 6 orchestrator)."
+    pre: priority == 4
+    post: status == "done"
+  }
+}
+
+// ============================================================
+// ЗАДАЧИ PRIORITY 5 — перенос на Rust
+// ============================================================
+
+class PestParseRsTask : Task {
+  $data id:       String = "p5-pest-parse-rs"
+  $data title:    String = "Rust: dsl/src/parse.rs — pest Pairs → ArkFile AST"
+  $data priority: Int [1..5] = 1
+  $data status:   String = "done"
+  $data phase:    String = "parser"
+
+  #process[strategy: script, priority: 1]{
+    description: "Walker над pest Pairs, precedence-climbing expressions"
+    post: status == "done"
+  }
+}
+
+class RustCodegenTask : Task {
+  $data id:       String = "p5-rust-codegen"
+  $data title:    String = "Rust: codegen/src — entity → Rust struct"
+  $data priority: Int [1..5] = 2
+  $data status:   String = "done"
+  $data phase:    String = "codegen"
+  $data agent:    String = "general-purpose"
+
+  #process[strategy: script, priority: 2]{
+    description: "codegen/src/lib.rs 282 loc, 5 тестов зелёных. SoA вынесен отдельно."
+    post: status == "done"
+  }
+}
+
+class SmtLibTask : Task {
+  $data id:       String = "p5-smt-lib"
+  $data title:    String = "Rust: verify/src — AST → SMT-LIB2 text"
+  $data priority: Int [1..5] = 2
+  $data status:   String = "done"
+  $data phase:    String = "verify"
+  $data agent:    String = "general-purpose"
+
+  #process[strategy: script, priority: 2]{
+    description: "ark-verify крейт: ArkFile→.smt2 текст, без libz3. 2 теста зелёные."
+    post: status == "done"
+  }
+}
+
+class OrchestratorRsTask : Task {
+  $data id:       String = "p5-orchestrator-rs"
+  $data title:    String = "Rust: orchestrator/src — читает root.ark, запускает DAG"
+  $data priority: Int [1..5] = 3
+  $data status:   String = "done"
+  $data phase:    String = "runtime"
+  $data agent:    String = "general-purpose"
+
+  #process[strategy: script, priority: 3]{
+    description: "ark-orchestrator крейт: lib+bin, parse→verify→codegen+DAG. 3 теста зелёных. Попутно fixed cmp_op word-boundary для 'in'."
+    post: status == "done"
+  }
+}
+
+// ============================================================
+// БЭКЛОГ — живой остров с диспетчеризацией задач
+// ============================================================
+
+island Backlog {
+  strategy: script
+  description: "Очередь задач ARK. Диспатчит ready-задачи свободным субагентам."
+
+  contains: [
+    SeparateInstanceStorageTask,
+    ProcessBodiesTask,
+    SoAProcessAllTask,
+    DefaultValuesTask,
+    ParserRobustnessTask,
+    ImportResolutionTask,
+    StdlibKeywordsTask,
+    UnitTestsTask,
+    ParserBugfixTask,
+    EmptyProcessMetaTask,
+    RequiresStmtTask,
+    DataPrefixExprTask,
+    VerifyFullExprTask,
+    BridgeContractTask,
+    TemporalBMCTask,
+    ArkDiffTask,
+    OrchestratorRootTask,
+    FileWatcherTask,
+    ClaudeTaskBridgeTask,
+    WgpuWindowTask,
+    WgpuBackendTask,
+    HecsEcsTask,
+    IslandTickLoopTask,
+    PestParseRsTask,
+    RustCodegenTask,
+    SmtLibTask,
+    OrchestratorRsTask
+  ]
+
+  $data total:      Int [0..100] = 27
+  $data done_count: Int [0..100] = 26
+  $data in_flight:  Int [0..100] = 0
+  $data blocked:    Int [0..100] = 0
+
+  @in{ tick: DeltaTime, agent_report: String }
+
+  #process[strategy: script, priority: 100]{
+    description: "Tick: найти ready-задачу, назначить свободному агенту, продвинуть"
+    pre: done_count <= total
+    pre: in_flight >= 0
+    pre: in_flight < total
+    pre: blocked >= 0
+
+    in_flight' = in_flight + 1
+
+    post: done_count <= total
+    post: in_flight' <= total
+  }
+
+  @out[guaranteed: true]{ progress: String, board: String }
+
+  invariant: done_count >= 0
+  invariant: done_count <= total
+  invariant: in_flight >= 0
+  invariant: blocked >= 0
+}
+
+// ============================================================
+// МОСТ — поток: Task → Subagent
+// ============================================================
+
+bridge Dispatch {
+  from: Task.artifacts
+  to:   CodeSubagent.assignment
+
+  contract {
+    invariant: status == "ready" or status == "in_progress"
+  }
+}
+
+bridge Review {
+  from: CodeSubagent.report
+  to:   ReviewSubagent.assignment
+
+  contract {
+    invariant: status == "done"
+  }
+}
+
+// ============================================================
+// РЕЕСТР — очередь исполнения по фазам
+// ============================================================
+
+registry BacklogPlan {
+  register SeparateInstanceStorageTask { phase: parser, priority: 1 }
+  register PestParseRsTask       { phase: parser,  priority: 1 }
+  register ProcessBodiesTask     { phase: codegen, priority: 1 }
+  register SoAProcessAllTask     { phase: codegen, priority: 1 }
+  register DefaultValuesTask     { phase: codegen, priority: 1 }
+  register ImportResolutionTask  { phase: parser,  priority: 1 }
+  register ParserRobustnessTask  { phase: parser,  priority: 2 }
+  register EmptyProcessMetaTask  { phase: parser,  priority: 2 }
+  register RequiresStmtTask      { phase: parser,  priority: 2 }
+  register DataPrefixExprTask    { phase: parser,  priority: 2 }
+  register RustCodegenTask       { phase: codegen, priority: 2 }
+  register SmtLibTask            { phase: verify,  priority: 2 }
+  register UnitTestsTask         { phase: tests,   priority: 2 }
+  register VerifyFullExprTask    { phase: verify,  priority: 2 }
+  register BridgeContractTask    { phase: verify,  priority: 2 }
+  register OrchestratorRootTask  { phase: runtime, priority: 2 }
+  register OrchestratorRsTask    { phase: runtime, priority: 3 }
+  register TemporalBMCTask       { phase: verify,  priority: 3 }
+  register ArkDiffTask           { phase: tools,   priority: 3 }
+  register FileWatcherTask       { phase: runtime, priority: 3 }
+  register ClaudeTaskBridgeTask  { phase: runtime, priority: 3 }
+  register WgpuWindowTask        { phase: runtime, priority: 4 }
+  register WgpuBackendTask       { phase: runtime, priority: 4 }
+  register HecsEcsTask           { phase: runtime, priority: 4 }
+  register IslandTickLoopTask    { phase: runtime, priority: 4 }
+}
+
+// ============================================================
+// ИНСТАНС — живая очередь на которой идёт исполнение
+// ============================================================
+
+instance ArkBacklog : Backlog {
+  total      = 27
+  done_count = 26
+  in_flight  = 0
+  blocked    = 0
+}
+
+// ============================================================
+// ВЕРИФИКАЦИЯ — топологические инварианты бэклога
+// ============================================================
+
+verify Backlog {
+  check done_never_negative:
+    ArkBacklog.done_count >= 0
+
+  check done_bounded:
+    ArkBacklog.done_count <= ArkBacklog.total
+
+  check parser_before_codegen:
+    PestParseRsTask.priority <= RustCodegenTask.priority
+
+  check priority_well_formed:
+    ProcessBodiesTask.priority >= 1 and OrchestratorRsTask.priority <= 5
+
+  check process_bodies_done:
+    ProcessBodiesTask.priority == 1
+
+  check dispatch_contract:
+    DefaultValuesTask.status == "ready" or DefaultValuesTask.status == "done"
+}
