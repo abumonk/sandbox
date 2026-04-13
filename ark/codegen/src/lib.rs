@@ -146,7 +146,9 @@ pub fn expr_to_rust(expr: &Expr, num_suffix: &str) -> String {
         Expr::StringLit(_)
         | Expr::DottedPath(_)
         | Expr::FnCall(_, _)
-        | Expr::ForAll { .. } => "/* unsupported */ Default::default()".to_string(),
+        | Expr::ForAll { .. }
+        | Expr::Pipe { .. }
+        | Expr::ParamRef { .. } => "/* unsupported */ Default::default()".to_string(),
     }
 }
 

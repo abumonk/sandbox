@@ -6,8 +6,9 @@
 
 use crate::{
     ArkFile, ArkParser, BridgeDef, CheckDef, Constraint, ContractDef, DataField, EntityDef, Expr,
-    ImportPath, InPort, InstanceDef, IslandDef, Item, MetaPair, OutPort, ProcessRule, RegistryDef,
-    RegistryEntry, Rule, Statement, TypeExpr, TypedField, VerifyDef,
+    ExpressionDef, ImportPath, InPort, InstanceDef, IslandDef, Item, MetaPair, OutPort,
+    PipeStage, PredicateDef, ProcessRule, RefKind, RegistryDef, RegistryEntry, Rule, Statement,
+    TypeExpr, TypedField, VerifyDef,
 };
 use anyhow::{anyhow, Result};
 use pest::iterators::Pair;
@@ -35,6 +36,8 @@ pub(crate) fn build_indices(file: &mut ArkFile) {
     file.classes_index.clear();
     file.instances_index.clear();
     file.island_classes_index.clear();
+    file.expression_index.clear();
+    file.predicate_index.clear();
 
     for (idx, item) in file.items.iter().enumerate() {
         match item {
@@ -56,6 +59,12 @@ pub(crate) fn build_indices(file: &mut ArkFile) {
                 if !nested.is_empty() {
                     file.island_classes_index.insert(isl.name.clone(), nested);
                 }
+            }
+            Item::Expression(def) => {
+                file.expression_index.insert(def.name.clone(), idx);
+            }
+            Item::Predicate(def) => {
+                file.predicate_index.insert(def.name.clone(), idx);
             }
             _ => {}
         }
@@ -89,6 +98,12 @@ fn file_from_pair(pair: Pair<Rule>) -> Result<ArkFile> {
             }
             Rule::verify_def => {
                 items.push(Item::Verify(verify_from_pair(inner)?));
+            }
+            Rule::expression_def => {
+                items.push(Item::Expression(expression_def_from_pair(inner)?));
+            }
+            Rule::predicate_def => {
+                items.push(Item::Predicate(predicate_def_from_pair(inner)?));
             }
             Rule::EOI => {}
             other => return Err(anyhow!("unexpected top-level rule: {:?}", other)),
@@ -461,6 +476,90 @@ fn check_from_pair(pair: Pair<Rule>) -> Result<CheckDef> {
     Ok(CheckDef {
         name,
         expr: expr_from_pair(expr_pair)?,
+    })
+}
+
+// ============================================================
+// EXPRESSION DEF / PREDICATE DEF
+// ============================================================
+
+fn expression_def_from_pair(pair: Pair<Rule>) -> Result<ExpressionDef> {
+    // expression_def = { "expression" ~ ident ~ "{" ~ expression_body ~ "}" }
+    // expression_body = { "in:" ~ typed_field_list ~ "out:" ~ type_expr ~ "chain:" ~ expression }
+    let mut inner = pair.into_inner();
+    let name = inner
+        .next()
+        .ok_or_else(|| anyhow!("expression_def missing name"))?
+        .as_str()
+        .to_string();
+
+    // Find the expression_body child
+    let body = inner
+        .find(|p| p.as_rule() == Rule::expression_body)
+        .ok_or_else(|| anyhow!("expression_def missing body"))?;
+
+    let mut inputs: Vec<TypedField> = Vec::new();
+    let mut output: Option<TypeExpr> = None;
+    let mut chain: Option<Expr> = None;
+
+    for p in body.into_inner() {
+        match p.as_rule() {
+            Rule::typed_field_list => {
+                inputs = typed_field_list_from_pair(p)?;
+            }
+            Rule::generic_type | Rule::array_type | Rule::named_type => {
+                output = Some(type_from_pair(p)?);
+            }
+            Rule::expression => {
+                chain = Some(expr_from_pair(p)?);
+            }
+            _ => {}
+        }
+    }
+
+    Ok(ExpressionDef {
+        name,
+        inputs,
+        output: output.ok_or_else(|| anyhow!("expression_def missing out type"))?,
+        chain: chain.ok_or_else(|| anyhow!("expression_def missing chain"))?,
+        description: None,
+    })
+}
+
+fn predicate_def_from_pair(pair: Pair<Rule>) -> Result<PredicateDef> {
+    // predicate_def = { "predicate" ~ ident ~ "{" ~ predicate_body ~ "}" }
+    // predicate_body = { "in:" ~ typed_field_list ~ "check:" ~ expression }
+    let mut inner = pair.into_inner();
+    let name = inner
+        .next()
+        .ok_or_else(|| anyhow!("predicate_def missing name"))?
+        .as_str()
+        .to_string();
+
+    let body = inner
+        .find(|p| p.as_rule() == Rule::predicate_body)
+        .ok_or_else(|| anyhow!("predicate_def missing body"))?;
+
+    let mut inputs: Vec<TypedField> = Vec::new();
+    let mut check: Option<Expr> = None;
+
+    for p in body.into_inner() {
+        match p.as_rule() {
+            Rule::typed_field_list => {
+                inputs = typed_field_list_from_pair(p)?;
+            }
+            Rule::expression => {
+                check = Some(expr_from_pair(p)?);
+            }
+            _ => {}
+        }
+    }
+
+    Ok(PredicateDef {
+        name,
+        inputs,
+        check: check.ok_or_else(|| anyhow!("predicate_def missing check"))?,
+        description: None,
     })
 }
 
@@ -840,13 +939,28 @@ fn expr_from_pair(pair: Pair<Rule>) -> Result<Expr> {
             expr_from_pair(inner)
         }
         Rule::pipe_expr => {
-            // Passthrough: T003/T004 will add full pipe handling.
-            // For now, just recurse into the first child (the or_expr).
-            let inner = pair
-                .into_inner()
-                .next()
-                .ok_or_else(|| anyhow!("pipe_expr empty"))?;
-            expr_from_pair(inner)
+            // pipe_expr = { or_expr ~ ("|>" ~ pipe_stage)* }
+            // If there are no pipe stages, pass through to the or_expr.
+            // If there are stages, build Expr::Pipe { head, stages }.
+            let children: Vec<Pair<Rule>> = pair.into_inner().collect();
+            // First child is always the or_expr (the head).
+            let mut iter = children.into_iter();
+            let head_pair = iter.next().ok_or_else(|| anyhow!("pipe_expr empty"))?;
+            let head = expr_from_pair(head_pair)?;
+            // Remaining children alternate: pipe_stage pairs ("|>" is silent/not captured)
+            let stages: Result<Vec<PipeStage>> = iter
+                .filter(|p| p.as_rule() == Rule::pipe_stage)
+                .map(pipe_stage_from_pair)
+                .collect();
+            let stages = stages?;
+            if stages.is_empty() {
+                Ok(head)
+            } else {
+                Ok(Expr::Pipe {
+                    head: Box::new(head),
+                    stages,
+                })
+            }
         }
         Rule::or_expr => fold_binop_token(pair, "or"),
         Rule::and_expr => fold_binop_token(pair, "and"),
@@ -884,6 +998,78 @@ fn expr_from_pair(pair: Pair<Rule>) -> Result<Expr> {
         Rule::true_expr => Ok(Expr::Bool(true)),
         Rule::false_expr => Ok(Expr::Bool(false)),
         Rule::path_call_expr => path_call_from_pair(pair),
+        Rule::var_ref => {
+            // var_ref = ${ "@" ~ ident }
+            // The ident inner pair gives the name (without the "@").
+            let name = pair
+                .into_inner()
+                .find(|p| p.as_rule() == Rule::ident)
+                .map(|p| p.as_str().to_string())
+                .unwrap_or_default();
+            Ok(Expr::ParamRef {
+                kind: RefKind::Var,
+                name,
+                path: Vec::new(),
+                index: None,
+                nested: None,
+            })
+        }
+        Rule::prop_ref => {
+            // prop_ref = { "[" ~ ident ~ ("." ~ ident)+ ~ "]" }
+            // Inner pairs: all ident children — first is the head name, rest are path.
+            let mut idents: Vec<String> = pair
+                .into_inner()
+                .filter(|p| p.as_rule() == Rule::ident)
+                .map(|p| p.as_str().to_string())
+                .collect();
+            if idents.is_empty() {
+                return Err(anyhow!("prop_ref has no idents"));
+            }
+            let name = idents.remove(0);
+            Ok(Expr::ParamRef {
+                kind: RefKind::Prop,
+                name,
+                path: idents,
+                index: None,
+                nested: None,
+            })
+        }
+        Rule::idx_ref => {
+            // idx_ref = ${ "#" ~ ident ~ "[" ~ number ~ "]" }
+            // Collect all inner pairs up-front so we can scan for both ident and number.
+            let children: Vec<Pair<Rule>> = pair.into_inner().collect();
+            let name = children
+                .iter()
+                .find(|p| p.as_rule() == Rule::ident)
+                .map(|p| p.as_str().to_string())
+                .unwrap_or_default();
+            let index = children
+                .iter()
+                .find(|p| p.as_rule() == Rule::number)
+                .and_then(|p| p.as_str().parse::<i64>().ok());
+            Ok(Expr::ParamRef {
+                kind: RefKind::Idx,
+                name,
+                path: Vec::new(),
+                index,
+                nested: None,
+            })
+        }
+        Rule::nested_ref => {
+            // nested_ref = { "{" ~ expression ~ "}" }
+            let inner_expr = pair
+                .into_inner()
+                .find(|p| p.as_rule() == Rule::expression)
+                .ok_or_else(|| anyhow!("nested_ref missing expression"))?;
+            let expr = expr_from_pair(inner_expr)?;
+            Ok(Expr::ParamRef {
+                kind: RefKind::Nested,
+                name: String::new(),
+                path: Vec::new(),
+                index: None,
+                nested: Some(Box::new(expr)),
+            })
+        }
         Rule::number => {
             let n = pair
                 .as_str()
@@ -997,6 +1183,35 @@ fn path_call_from_pair(pair: Pair<Rule>) -> Result<Expr> {
             }
         }
     }
+}
+
+fn pipe_stage_from_pair(pair: Pair<Rule>) -> Result<PipeStage> {
+    // pipe_stage = { pipe_fn_ident ~ call_tail? }
+    // pipe_fn_ident is @-atomic — its text is the full kebab-case name (e.g., "text-to-lower").
+    let mut name = String::new();
+    let mut args: Vec<Expr> = Vec::new();
+
+    for p in pair.into_inner() {
+        match p.as_rule() {
+            Rule::pipe_fn_ident => {
+                name = p.as_str().to_string();
+            }
+            Rule::call_tail => {
+                args = p
+                    .into_inner()
+                    .filter(|q| q.as_rule() == Rule::expression)
+                    .map(expr_from_pair)
+                    .collect::<Result<Vec<_>>>()?;
+            }
+            _ => {}
+        }
+    }
+
+    if name.is_empty() {
+        return Err(anyhow!("pipe_stage missing function name"));
+    }
+
+    Ok(PipeStage { name, args })
 }
 
 // ============================================================
@@ -1121,6 +1336,179 @@ mod tests {
         assert_eq!(f.instances_of("Known").len(), 1);
     }
 
+    // ============================================================
+    // Pipe expressions
+    // ============================================================
+
+    #[test]
+    fn parses_pipe_expr_single_stage() {
+        let src = r#"
+            class C {
+                #process[strategy: code]{
+                    result = value |> text-to-lower
+                }
+            }
+        "#;
+        let f = parse(src).unwrap();
+        assert_eq!(f.items.len(), 1);
+        if let Item::Class(e) = &f.items[0] {
+            if let Some(Statement::Assignment(_, expr)) = e.processes[0].body.first() {
+                assert!(matches!(expr, Expr::Pipe { .. }), "expected Pipe, got {:?}", expr);
+                if let Expr::Pipe { stages, .. } = expr {
+                    assert_eq!(stages.len(), 1);
+                    assert_eq!(stages[0].name, "text-to-lower");
+                }
+            } else {
+                panic!("expected assignment statement");
+            }
+        } else {
+            panic!("expected class");
+        }
+    }
+
+    #[test]
+    fn parses_pipe_expr_multi_stage() {
+        let src = r#"
+            class C {
+                #process[strategy: code]{
+                    result = value |> text-to-lower |> trim
+                }
+            }
+        "#;
+        let f = parse(src).unwrap();
+        if let Item::Class(e) = &f.items[0] {
+            if let Some(Statement::Assignment(_, expr)) = e.processes[0].body.first() {
+                if let Expr::Pipe { head: _, stages } = expr {
+                    assert_eq!(stages.len(), 2);
+                    assert_eq!(stages[0].name, "text-to-lower");
+                    assert_eq!(stages[1].name, "trim");
+                } else {
+                    panic!("expected Pipe");
+                }
+            } else {
+                panic!("expected assignment");
+            }
+        }
+    }
+
+    // ============================================================
+    // Parameter references
+    // ============================================================
+
+    #[test]
+    fn parses_var_ref() {
+        let src = r#"
+            class C {
+                #process[strategy: code]{
+                    check = @myVar
+                }
+            }
+        "#;
+        let f = parse(src).unwrap();
+        if let Item::Class(e) = &f.items[0] {
+            if let Some(Statement::Assignment(_, expr)) = e.processes[0].body.first() {
+                if let Expr::ParamRef { kind, name, .. } = expr {
+                    assert!(matches!(kind, RefKind::Var));
+                    assert_eq!(name, "myVar");
+                } else {
+                    panic!("expected ParamRef(Var), got {:?}", expr);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn parses_prop_ref() {
+        let src = r#"
+            class C {
+                #process[strategy: code]{
+                    check = [obj.field.sub]
+                }
+            }
+        "#;
+        let f = parse(src).unwrap();
+        if let Item::Class(e) = &f.items[0] {
+            if let Some(Statement::Assignment(_, expr)) = e.processes[0].body.first() {
+                if let Expr::ParamRef { kind, name, path, .. } = expr {
+                    assert!(matches!(kind, RefKind::Prop));
+                    assert_eq!(name, "obj");
+                    assert_eq!(path, &vec!["field".to_string(), "sub".to_string()]);
+                } else {
+                    panic!("expected ParamRef(Prop), got {:?}", expr);
+                }
+            }
+        }
+    }
+
+    // ============================================================
+    // Expression / Predicate items
+    // ============================================================
+
+    #[test]
+    fn parses_expression_def() {
+        let src = r#"
+            expression NormalizeText {
+                in: val: String
+                out: String
+                chain: val |> text-to-lower |> trim
+            }
+        "#;
+        let f = parse(src).unwrap();
+        assert_eq!(f.items.len(), 1);
+        match &f.items[0] {
+            Item::Expression(def) => {
+                assert_eq!(def.name, "NormalizeText");
+                assert_eq!(def.inputs.len(), 1);
+                assert_eq!(def.inputs[0].name, "val");
+                assert!(matches!(def.output, TypeExpr::Named(_)));
+                assert!(matches!(def.chain, Expr::Pipe { .. }));
+            }
+            other => panic!("expected Expression item, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parses_predicate_def() {
+        let src = r#"
+            predicate IsPositive {
+                in: val: Float
+                check: val > 0
+            }
+        "#;
+        let f = parse(src).unwrap();
+        assert_eq!(f.items.len(), 1);
+        match &f.items[0] {
+            Item::Predicate(def) => {
+                assert_eq!(def.name, "IsPositive");
+                assert_eq!(def.inputs.len(), 1);
+                assert_eq!(def.inputs[0].name, "val");
+                assert!(matches!(def.check, Expr::BinOp(..)));
+            }
+            other => panic!("expected Predicate item, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn expression_index_last_wins_on_duplicate() {
+        let src = r#"
+            expression Foo {
+                in: x: Int
+                out: Int
+                chain: x
+            }
+            expression Foo {
+                in: y: Float
+                out: Float
+                chain: y
+            }
+        "#;
+        let f = parse(src).unwrap();
+        assert_eq!(f.items.len(), 2);
+        // Last-wins: index points to index 1 (the second Foo).
+        let idx = f.expression_index.get("Foo").copied().expect("Foo indexed");
+        assert_eq!(idx, 1);
+    }
+
     #[test]
     fn island_classes_live_in_separate_per_island_map() {
         let src = r#"
@@ -1151,5 +1539,99 @@ mod tests {
             .get("Other")
             .expect("Other island indexed");
         assert!(other.contains_key("Helper"));
+    }
+
+    // ============================================================
+    // JSON round-trip tests — parse → serialize → deserialize → assert_eq
+    // These ensure Rust AST and Python parser can interop via JSON.
+    // ============================================================
+
+    #[test]
+    fn pipe_expr_json_roundtrip() {
+        let src = r#"
+            class C {
+                #process[strategy: code]{
+                    result = x |> abs
+                }
+            }
+        "#;
+        let f = parse(src).unwrap();
+        let json = serde_json::to_string(&f).unwrap();
+        let f2: ArkFile = serde_json::from_str(&json).unwrap();
+        assert_eq!(format!("{:?}", f), format!("{:?}", f2));
+    }
+
+    #[test]
+    fn pipe_multi_stage_json_roundtrip() {
+        let src = r#"
+            class C {
+                #process[strategy: code]{
+                    result = x |> abs |> neg
+                }
+            }
+        "#;
+        let f = parse(src).unwrap();
+        let json = serde_json::to_string(&f).unwrap();
+        let f2: ArkFile = serde_json::from_str(&json).unwrap();
+        assert_eq!(format!("{:?}", f), format!("{:?}", f2));
+    }
+
+    #[test]
+    fn param_ref_var_json_roundtrip() {
+        let src = r#"
+            class C {
+                #process[strategy: code]{
+                    check = @myVar
+                }
+            }
+        "#;
+        let f = parse(src).unwrap();
+        let json = serde_json::to_string(&f).unwrap();
+        let f2: ArkFile = serde_json::from_str(&json).unwrap();
+        assert_eq!(format!("{:?}", f), format!("{:?}", f2));
+    }
+
+    #[test]
+    fn param_ref_prop_json_roundtrip() {
+        let src = r#"
+            class C {
+                #process[strategy: code]{
+                    check = [obj.field]
+                }
+            }
+        "#;
+        let f = parse(src).unwrap();
+        let json = serde_json::to_string(&f).unwrap();
+        let f2: ArkFile = serde_json::from_str(&json).unwrap();
+        assert_eq!(format!("{:?}", f), format!("{:?}", f2));
+    }
+
+    #[test]
+    fn expression_def_json_roundtrip() {
+        let src = r#"
+            expression NormalizeText {
+                in: val: String
+                out: String
+                chain: val |> text-to-lower |> trim
+            }
+        "#;
+        let f = parse(src).unwrap();
+        let json = serde_json::to_string(&f).unwrap();
+        let f2: ArkFile = serde_json::from_str(&json).unwrap();
+        assert_eq!(format!("{:?}", f), format!("{:?}", f2));
+    }
+
+    #[test]
+    fn predicate_def_json_roundtrip() {
+        let src = r#"
+            predicate IsPositive {
+                in: val: Float
+                check: val > 0
+            }
+        "#;
+        let f = parse(src).unwrap();
+        let json = serde_json::to_string(&f).unwrap();
+        let f2: ArkFile = serde_json::from_str(&json).unwrap();
+        assert_eq!(format!("{:?}", f), format!("{:?}", f2));
     }
 }

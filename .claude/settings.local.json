@@ -57,7 +57,15 @@
       "Bash(cp C:/Users/borod/.claude/plugins/cache/claudovka-marketplace/team-pipeline/0.14.3/roles/templates/code-reviewer.md R:/Sandbox/.agent/roles/code-reviewer.md)",
       "Bash(gh repo:*)",
       "Bash(ls R:/Sandbox/.agent/adventures/ADV-001/tasks/ADV001-T*.md)",
-      "Bash(cargo build:*)"
+      "Bash(cargo build:*)",
+      "Bash(pytest tests/ -q)",
+      "Bash(python ark.py parse dsl/stdlib/expression.ark)",
+      "Bash(python ark.py parse dsl/stdlib/predicate.ark)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f'{len\\(d[\\\\\"items\\\\\"]\\)} predicates'\\)\")",
+      "Bash(pytest tests/test_parser_expression_items.py -q)",
+      "Bash(pytest tests/test_parser_pipe.py -q)",
+      "Bash(pytest tests/test_verify_expression.py -q)",
+      "Bash(python ark.py verify specs/test_minimal.ark)"
     ]
   }
 }

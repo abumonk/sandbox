@@ -183,6 +183,8 @@ pub fn expr_to_smt(expr: &Expr, entity: &str) -> String {
         Expr::ForAll { .. } => "true ; TODO: unsupported ForAll".to_string(),
         Expr::DottedPath(_) => "true ; TODO: unsupported DottedPath".to_string(),
         Expr::StringLit(_) => "true ; TODO: unsupported StringLit".to_string(),
+        Expr::Pipe { .. } => "true ; TODO: unsupported Pipe".to_string(),
+        Expr::ParamRef { .. } => "true ; TODO: unsupported ParamRef".to_string(),
     }
 }
 

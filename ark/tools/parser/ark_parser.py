@@ -856,6 +856,10 @@ class ArkTransformer(Transformer):
 
     # --- Expression / Predicate definitions ---
 
+    def def_ident(self, items):
+        """Kebab-case name rule: IDENT ('-' IDENT)* → joined string."""
+        return "-".join(str(i) for i in items)
+
     def expression_body(self, items):
         # items: [typed_field_list, type_expr, chain_expr]
         return {"inputs": items[0], "output": items[1], "chain": items[2]}

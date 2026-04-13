@@ -1,0 +1,75 @@
+// ARK Standard Library — Predicates
+// Boolean predicates for use in check: clauses and invariants.
+// All predicate names use kebab-case.
+
+// ============================================================
+// STRING PREDICATES
+// ============================================================
+
+// True when the string has zero characters.
+predicate is-empty {
+  in: s: String
+  check: s |> str-is-empty
+}
+
+// True when the string starts with the given prefix.
+predicate starts-with {
+  in: s: String, prefix: String
+  check: s |> str-starts-with(prefix)
+}
+
+// True when the string ends with the given suffix.
+predicate ends-with {
+  in: s: String, suffix: String
+  check: s |> str-ends-with(suffix)
+}
+
+// True when the string contains the given substring.
+predicate contains {
+  in: s: String, needle: String
+  check: s |> str-contains(needle)
+}
+
+// True when the string matches the given regular-expression pattern.
+predicate matches-regex {
+  in: s: String, pattern: String
+  check: s |> str-matches(pattern)
+}
+
+// ============================================================
+// NULL / MISSING PREDICATES
+// ============================================================
+
+// True when the float value represents a null / missing value.
+predicate is-null {
+  in: x: Float
+  check: x |> is-null-float
+}
+
+// ============================================================
+// NUMERIC COMPARISON PREDICATES
+// ============================================================
+
+// True when lo <= x < hi (half-open interval).
+predicate is-within {
+  in: x: Float, lo: Float, hi: Float
+  check: x >= lo and x < hi
+}
+
+// True when x equals y.
+predicate is-equal-to {
+  in: x: Float, y: Float
+  check: x == y
+}
+
+// True when x is strictly greater than y.
+predicate is-greater-than {
+  in: x: Float, y: Float
+  check: x > y
+}
+
+// True when x is strictly less than y.
+predicate is-less-than {
+  in: x: Float, y: Float
+  check: x < y
+}

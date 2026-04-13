@@ -105,7 +105,7 @@ pub fn run_pipeline(spec: &Path) -> Result<PipelineReport> {
             Item::Bridge(_) => bridges += 1,
             Item::Registry(_) => registries += 1,
             Item::Verify(_) => verify_targets += 1,
-            Item::Instance(_) => {}
+            Item::Instance(_) | Item::Expression(_) | Item::Predicate(_) => {}
         }
     }
 

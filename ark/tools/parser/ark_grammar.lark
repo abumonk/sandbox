@@ -127,8 +127,11 @@ check_stmt: "check" IDENT ":" expr
 // EXPRESSION & PREDICATE DEFINITIONS
 // ============================================================
 
-expression_def: "expression" IDENT "{" expression_body "}"
-predicate_def: "predicate" IDENT "{" predicate_body "}"
+expression_def: "expression" def_ident "{" expression_body "}"
+predicate_def: "predicate" def_ident "{" predicate_body "}"
+
+// Kebab-case name for expression / predicate definitions (e.g. is-empty, starts-with)
+def_ident: IDENT ("-" IDENT)*
 
 expression_body: "in:" typed_field_list "out:" type_expr "chain:" expr
 predicate_body: "in:" typed_field_list "check:" expr

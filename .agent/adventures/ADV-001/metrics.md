@@ -16,3 +16,13 @@ agent_runs: 0
 | planner | ADV001-T002 | opus | ~30000 | ~6000 | ~5min | ~10 | ready |
 | planner | ADV001-T006 | opus | ~35000 | ~8000 | ~5min | ~12 | ready |
 | implementer | ADV001-T006 | sonnet | ~45000 | ~3000 | ~10min | ~15 | ready |
+| implementer | ADV001-T003 | sonnet | 45000 | 3500 | 8min | 12 | done |
+| implementer | ADV001-T007 | sonnet | ~18000 | ~1500 | ~5min | ~8 | done |
+| implementer | ADV001-T004 | sonnet | ~52000 | ~4500 | ~12min | ~18 | done |
+| implementer | ADV001-T008 | sonnet | 12000 | 2500 | 4min | 8 | done |
+| implementer | ADV001-T023 | sonnet | ~28000 | ~3000 | ~8min | ~12 | ready |
+| implementer | ADV001-T030 | sonnet | 12000 | 1800 | 5min | 8 | done |
+| implementer | ADV001-T009 | sonnet | 8500 | 350 | 3min | 8 | done |
+| implementer | ADV001-T022 | sonnet | ~35000 | ~3500 | ~8min | ~12 | ready |
+| implementer | ADV001-T012 | sonnet | 45000 | 3500 | 25min | 18 | done |
+| implementer | ADV001-T011 | sonnet | 18000 | 2800 | 8min | 10 | ready |

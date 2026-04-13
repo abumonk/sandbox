@@ -1,0 +1,160 @@
+// ARK Standard Library — Numeric Expressions
+// v1 core subset: numeric functions declared as expression definitions.
+//
+// Note on naming: expression names follow IDENT syntax ([a-zA-Z_][a-zA-Z0-9_']*).
+// Kebab-case (e.g. numeric-absolute) is not supported by the IDENT terminal in
+// ark_grammar.lark — hyphens are only allowed inside pipe_fn_ident (chain bodies).
+// Names use underscores for the numeric prefix instead.
+//
+// chain: bodies reference primitive operators resolved by codegen (not declared here).
+// See tools/codegen/expression_primitives.py for the target-language primitive map.
+
+// ============================================================
+// NUMERIC EXPRESSIONS
+// ============================================================
+
+expression numeric_absolute {
+  in: x: Float
+  out: Float
+  chain: x |> abs
+}
+
+expression numeric_add {
+  in: x: Float, y: Float
+  out: Float
+  chain: x |> add(y)
+}
+
+expression numeric_subtract {
+  in: x: Float, y: Float
+  out: Float
+  chain: x |> sub(y)
+}
+
+expression numeric_multiply {
+  in: x: Float, y: Float
+  out: Float
+  chain: x |> mul(y)
+}
+
+expression numeric_divide {
+  in: x: Float, y: Float
+  out: Float
+  chain: x |> div(y)
+}
+
+expression numeric_ceiling {
+  in: x: Float
+  out: Float
+  chain: x |> ceil
+}
+
+expression numeric_floor {
+  in: x: Float
+  out: Float
+  chain: x |> floor
+}
+
+expression numeric_round {
+  in: x: Float, digits: Int
+  out: Float
+  chain: x |> round-to(digits)
+}
+
+expression numeric_power {
+  in: x: Float, exp: Float
+  out: Float
+  chain: x |> pow(exp)
+}
+
+expression numeric_clamp {
+  in: x: Float, lo: Float, hi: Float
+  out: Float
+  chain: x |> clamp-range(lo, hi)
+}
+
+expression numeric_negate {
+  in: x: Float
+  out: Float
+  chain: x |> neg
+}
+
+// ============================================================
+// TEXT EXPRESSIONS
+// ============================================================
+
+expression text_to_lower {
+  in: s: String
+  out: String
+  chain: s |> str-lower
+}
+
+expression text_to_upper {
+  in: s: String
+  out: String
+  chain: s |> str-upper
+}
+
+expression text_trim {
+  in: s: String
+  out: String
+  chain: s |> str-trim
+}
+
+expression text_length {
+  in: s: String
+  out: Int
+  chain: s |> str-len
+}
+
+expression text_pad_right {
+  in: s: String, n: Int, ch: String
+  out: String
+  chain: s |> str-pad-right(n, ch)
+}
+
+expression text_pad_left {
+  in: s: String, n: Int, ch: String
+  out: String
+  chain: s |> str-pad-left(n, ch)
+}
+
+expression text_remove_chars {
+  in: s: String, chars: String
+  out: String
+  chain: s |> str-remove-chars(chars)
+}
+
+expression text_substring {
+  in: s: String, start: Int, len: Int
+  out: String
+  chain: s |> str-substring(start, len)
+}
+
+expression text_replace {
+  in: s: String, old: String, new: String
+  out: String
+  chain: s |> str-replace(old, new)
+}
+
+// ============================================================
+// NULL-HANDLING EXPRESSIONS
+// ============================================================
+
+expression null_to_zero {
+  in: x: Float
+  out: Float
+  chain: x |> null-to-zero
+}
+
+expression null_to_value {
+  in: x: Float, default_val: Float
+  out: Float
+  chain: x |> null-to-value(default_val)
+}
+
+expression neutral {
+  in: x: Float
+  out: Float
+  chain: x |> neutral
+}

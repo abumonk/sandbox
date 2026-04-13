@@ -37,6 +37,12 @@ pub struct ArkFile {
     /// name collisions between top-level and island-scoped classes.
     #[serde(default)]
     pub island_classes_index: BTreeMap<String, BTreeMap<String, usize>>,
+    /// Named expressions: expression name → index into `items`.
+    #[serde(default)]
+    pub expression_index: BTreeMap<String, usize>,
+    /// Named predicates: predicate name → index into `items`.
+    #[serde(default)]
+    pub predicate_index: BTreeMap<String, usize>,
 }
 
 impl ArkFile {
@@ -62,6 +68,24 @@ impl ArkFile {
             _ => None,
         }
     }
+
+    /// Return a reference to the named `ExpressionDef`, if present.
+    pub fn expression(&self, name: &str) -> Option<&ExpressionDef> {
+        let idx = *self.expression_index.get(name)?;
+        match self.items.get(idx)? {
+            Item::Expression(def) => Some(def),
+            _ => None,
+        }
+    }
+
+    /// Return a reference to the named `PredicateDef`, if present.
+    pub fn predicate(&self, name: &str) -> Option<&PredicateDef> {
+        let idx = *self.predicate_index.get(name)?;
+        match self.items.get(idx)? {
+            Item::Predicate(def) => Some(def),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,6 +102,8 @@ pub enum Item {
     Bridge(BridgeDef),
     Registry(RegistryDef),
     Verify(VerifyDef),
+    Expression(ExpressionDef),
+    Predicate(PredicateDef),
 }
 
 // ============================================================
@@ -177,6 +203,33 @@ pub struct ContractDef {
 }
 
 // ============================================================
+// ВЫРАЖЕНИЯ И ПРЕДИКАТЫ
+// ============================================================
+
+/// A named, reusable expression definition.
+///
+/// Declared with `expression Name(inputs…) -> OutputType { chain }`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExpressionDef {
+    pub name: String,
+    pub inputs: Vec<TypedField>,
+    pub output: TypeExpr,
+    pub chain: Expr,
+    pub description: Option<String>,
+}
+
+/// A named predicate (boolean expression) definition.
+///
+/// Declared with `predicate Name(inputs…) { check }`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PredicateDef {
+    pub name: String,
+    pub inputs: Vec<TypedField>,
+    pub check: Expr,
+    pub description: Option<String>,
+}
+
+// ============================================================
 // РЕЕСТР И ВЕРИФИКАЦИЯ
 // ============================================================
 
@@ -221,6 +274,26 @@ pub enum Constraint {
     EnumSet(Vec<Expr>),
 }
 
+/// Discriminant that identifies how a `ParamRef` resolves its target.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum RefKind {
+    /// A plain variable reference: `$name`
+    Var,
+    /// A dotted-path property reference: `$a.b.c`
+    Prop,
+    /// An index-based collection reference: `$col[n]`
+    Idx,
+    /// A nested expression reference
+    Nested,
+}
+
+/// A single stage in a pipe chain: `| name(arg, …)`
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PipeStage {
+    pub name: String,
+    pub args: Vec<Expr>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Expr {
     Ident(String),
@@ -236,6 +309,19 @@ pub enum Expr {
         var: String,
         condition: Option<Box<Expr>>,
         body: Vec<Statement>,
+    },
+    /// A pipe chain: `head | stage1(…) | stage2(…)`
+    Pipe {
+        head: Box<Expr>,
+        stages: Vec<PipeStage>,
+    },
+    /// A typed parameter reference (var / prop / index / nested).
+    ParamRef {
+        kind: RefKind,
+        name: String,
+        path: Vec<String>,
+        index: Option<i64>,
+        nested: Option<Box<Expr>>,
     },
 }
 

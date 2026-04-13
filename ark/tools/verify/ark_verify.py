@@ -7,13 +7,15 @@ ARK Verifier
   3. Нет конфликтующих инвариантов
 """
 
+import difflib
 import json
 import sys
 from pathlib import Path
 from z3 import (
     Real, Int, Bool, String, And, Or, Not, Implies, Solver,
     sat, unsat, unknown, RealVal, IntVal, StringVal, BoolVal,
-    is_true
+    is_true, If, Function, StringSort, RealSort, IntSort, BoolSort,
+    Select, Array, Length
 )
 
 # ============================================================
@@ -63,10 +65,195 @@ class SymbolTable:
 
 
 # ============================================================
+# PRIMITIVE MAPS
+# ============================================================
+
+NATIVE_PRIMITIVES = {
+    # Numeric → direct Z3 arithmetic
+    "abs":           lambda val, args: If(val >= 0, val, -val),
+    "add":           lambda val, args: val + args[0],
+    "sub":           lambda val, args: val - args[0],
+    "mul":           lambda val, args: val * args[0],
+    "div":           lambda val, args: val / args[0],
+    "neg":           lambda val, args: -val,
+    "ceil":          lambda val, args: val,   # approximation (Z3 Real has no ceil)
+    "floor":         lambda val, args: val,   # approximation
+    "round-to":      lambda val, args: val,   # approximation
+    "pow":           lambda val, args: val,   # Z3 Real doesn't support general pow; approx
+    "clamp-range":   lambda val, args: If(val < args[0], args[0], If(val > args[1], args[1], val)),
+    "identity-fn":   lambda val, args: val,
+    "default-float": lambda val, args: val,   # null handling → identity in SMT (no nulls)
+    # Text → Z3 string theory (decidable subset)
+    "str-len":       lambda val, args: Length(val),
+}
+
+OPAQUE_PRIMITIVES = {
+    "str-lower", "str-upper", "str-trim", "str-pad-right", "str-pad-left",
+    "str-remove-chars", "str-substring", "str-replace",
+    "str-starts-with", "str-ends-with", "str-contains",
+    "str-matches",
+}
+
+_opaque_cache: dict = {}
+
+
+def apply_opaque(name: str, val, args: list):
+    """Wrap an opaque primitive as an uninterpreted Z3 function."""
+    key = (name, len(args))
+    if key not in _opaque_cache:
+        if name.startswith("str-"):
+            in_sorts = [StringSort()] * (1 + len(args))
+            out_sort = StringSort()
+            if name in ("str-starts-with", "str-ends-with", "str-contains", "str-matches"):
+                out_sort = BoolSort()
+        else:
+            in_sorts = [RealSort()] * (1 + len(args))
+            out_sort = RealSort()
+        _opaque_cache[key] = Function(name.replace("-", "_"), *in_sorts, out_sort)
+    fn = _opaque_cache[key]
+    return fn(val, *args)
+
+
+def build_expr_registry(items: list) -> dict:
+    """Scan parsed items for Item::Expression, return {name: ExpressionDef}."""
+    registry = {}
+    for item in items:
+        if isinstance(item, dict) and item.get("item") == "expression":
+            registry[item["name"]] = item
+    return registry
+
+
+def build_pred_registry(items: list) -> dict:
+    """Scan parsed items for Item::Predicate, return {name: PredicateDef}."""
+    registry = {}
+    for item in items:
+        if isinstance(item, dict) and item.get("item") == "predicate":
+            registry[item["name"]] = item
+    return registry
+
+
+def inline_expression(val, extra_args: list, expr_def: dict, syms: "SymbolTable",
+                      expr_registry: dict, _seen: tuple = None):
+    """Inline a user-defined ExpressionDef by binding its inputs.
+
+    _seen is a tuple of expression names currently being inlined (ordered);
+    used for cycle detection with full cycle-path reporting. Passed through
+    the call chain via apply_stage and translate_pipe to detect both direct
+    and mutual recursion.
+    """
+    if _seen is None:
+        _seen = ()
+    name = expr_def["name"]
+    if name in _seen:
+        # Build the cycle path: from where the cycle starts to where we are
+        cycle_start = _seen.index(name)
+        cycle_path = list(_seen[cycle_start:]) + [name]
+        raise ValueError(
+            f"Recursive expression cycle detected: {' -> '.join(cycle_path)}"
+        )
+    _seen = _seen + (name,)
+
+    inputs = expr_def.get("inputs", [])
+    chain = expr_def.get("chain")
+    if not chain:
+        return val
+
+    # Build a local symbol table with input bindings
+    local_syms = SymbolTable()
+    local_syms.vars = dict(syms.vars)
+    local_syms.vars_next = dict(syms.vars_next)
+    # Bind first input to piped value
+    if inputs:
+        local_syms.vars[inputs[0]["name"]] = val
+    # Bind remaining inputs to extra args
+    for i, inp in enumerate(inputs[1:]):
+        if i < len(extra_args):
+            local_syms.vars[inp["name"]] = extra_args[i]
+
+    return translate_pipe_raw(chain, local_syms, expr_registry, _seen) \
+        if chain.get("expr") == "pipe" \
+        else translate_expr(chain, local_syms, expr_registry)
+
+
+def apply_stage(val, stage: dict, syms: "SymbolTable", expr_registry: dict = None,
+                _seen: tuple = None):
+    """Apply a single pipe stage to val, returning the new Z3 expression."""
+    name = stage["name"]
+    args = [translate_expr(a, syms, expr_registry) for a in stage.get("args", [])]
+
+    # 1. Native Z3 primitive?
+    if name in NATIVE_PRIMITIVES:
+        return NATIVE_PRIMITIVES[name](val, args)
+
+    # 2. User-defined expression in registry?
+    if expr_registry and name in expr_registry:
+        return inline_expression(val, args, expr_registry[name], syms, expr_registry, _seen)
+
+    # 3. Opaque primitive?
+    if name in OPAQUE_PRIMITIVES:
+        return apply_opaque(name, val, args)
+
+    # 4. Unknown → error with fuzzy suggestions (T015)
+    all_known = sorted(
+        set(list(NATIVE_PRIMITIVES.keys()) + list(OPAQUE_PRIMITIVES) +
+            list((expr_registry or {}).keys()))
+    )
+    suggestions = difflib.get_close_matches(name, all_known, n=3, cutoff=0.6)
+    loc = ""
+    if stage.get("file") or stage.get("line"):
+        loc = f" at {stage.get('file', '<unknown>')}:{stage.get('line', '?')}:{stage.get('col', '?')}"
+    if suggestions:
+        raise ValueError(
+            f"Unknown pipe stage '{name}'{loc}. Did you mean: {suggestions}?"
+        )
+    raise ValueError(
+        f"Unknown pipe stage '{name}'{loc}. Known stages: {all_known[:10]}..."
+    )
+
+
+def translate_pipe_raw(expr: dict, syms: "SymbolTable", expr_registry: dict = None,
+                       _seen: tuple = None):
+    """Internal: fold pipe head through stages, threading _seen for cycle detection."""
+    val = translate_expr(expr["head"], syms, expr_registry)
+    for stage in expr.get("stages", []):
+        val = apply_stage(val, stage, syms, expr_registry, _seen)
+    return val
+
+
+def translate_pipe(expr: dict, syms: "SymbolTable", expr_registry: dict = None):
+    """Translate a pipe AST node: fold head through stages left-to-right."""
+    return translate_pipe_raw(expr, syms, expr_registry, _seen=None)
+
+
+def translate_param_ref(expr: dict, syms: "SymbolTable", expr_registry: dict = None):
+    """Translate a param_ref AST node into a Z3 expression."""
+    ref_kind = expr.get("ref_kind")
+
+    if ref_kind == "var":
+        name = expr["name"]
+        return syms.get(name)
+
+    elif ref_kind == "prop":
+        path = ".".join(expr["parts"])
+        return syms.get(path)
+
+    elif ref_kind == "idx":
+        name = expr["name"]
+        index = expr.get("index", 0)
+        arr = Array(name, IntSort(), RealSort())
+        return Select(arr, IntVal(int(index)))
+
+    elif ref_kind == "nested":
+        return translate_expr(expr["inner"], syms, expr_registry)
+
+    raise ValueError(f"Unknown param_ref kind: {ref_kind!r}")
+
+
+# ============================================================
 # EXPR → Z3 TRANSLATOR
 # ============================================================
 
-def translate_expr(expr: dict, syms: SymbolTable):
+def translate_expr(expr: dict, syms: SymbolTable, expr_registry: dict = None):
     """Convert ARK AST expression → Z3 expression"""
     if expr is None:
         return True
@@ -99,8 +286,8 @@ def translate_expr(expr: dict, syms: SymbolTable):
         return syms.get(full)
 
     elif kind == "binop":
-        left = translate_expr(expr["left"], syms)
-        right = translate_expr(expr["right"], syms)
+        left = translate_expr(expr["left"], syms, expr_registry)
+        right = translate_expr(expr["right"], syms, expr_registry)
         op = expr["op"]
         if op == ">=": return left >= right
         if op == "<=": return left <= right
@@ -118,7 +305,7 @@ def translate_expr(expr: dict, syms: SymbolTable):
         raise ValueError(f"Unknown binop: {op}")
 
     elif kind == "unary":
-        operand = translate_expr(expr["operand"], syms)
+        operand = translate_expr(expr["operand"], syms, expr_registry)
         op = expr["op"]
         if op == "not": return Not(operand)
         raise ValueError(f"Unknown unary op: {op}")
@@ -127,12 +314,12 @@ def translate_expr(expr: dict, syms: SymbolTable):
         # □, ◇ — for model checking, not SMT
         # For SMT, □(P) ≈ P must hold in all reachable states
         # We approximate: just check P
-        return translate_expr(expr["operand"], syms)
+        return translate_expr(expr["operand"], syms, expr_registry)
 
     elif kind == "call":
         # clamp, length, etc. — approximate as identity for now
         name = expr["name"]
-        args = [translate_expr(a, syms) for a in expr.get("args", [])]
+        args = [translate_expr(a, syms, expr_registry) for a in expr.get("args", [])]
         if name == "clamp" and len(args) >= 1:
             return args[0]
         if name == "length" and len(args) >= 1:
@@ -145,8 +332,14 @@ def translate_expr(expr: dict, syms: SymbolTable):
         # Approximate: check the body expression
         body = expr.get("body")
         if isinstance(body, dict):
-            return translate_expr(body, syms)
+            return translate_expr(body, syms, expr_registry)
         return True
+
+    elif kind == "pipe":
+        return translate_pipe(expr, syms, expr_registry)
+
+    elif kind == "param_ref":
+        return translate_param_ref(expr, syms, expr_registry)
 
     raise ValueError(f"Cannot translate expression: {expr}")
 
