@@ -1,0 +1,34 @@
+{
+  "hooks": {
+    "pre_commit_asset_naming": {
+      "event": "pre_commit",
+      "pattern": "\"content/**/*\"",
+      "action": "\"validate_asset_names --convention studio_naming_guide --fail-on-violation\""
+    },
+    "post_push_build_trigger": {
+      "event": "post_push",
+      "pattern": "\"refs/heads/main,refs/heads/release/*\"",
+      "action": "\"jenkins trigger-build --job game-ci --branch $BRANCH --notify slack:#builds\""
+    },
+    "pre_submit_perf_check": {
+      "event": "pre_push",
+      "pattern": "\"Source/**/*.cpp,Source/**/*.h\"",
+      "action": "\"ark perf-check --budget engine_perf_budget.ark --fail-on-regression\""
+    },
+    "post_build_notify": {
+      "event": "build_end",
+      "pattern": "\"build/artifacts/*\"",
+      "action": "\"notify-team --channel slack:#builds --attach build_report.json\""
+    },
+    "session_audit": {
+      "event": "session_end",
+      "pattern": "\".agent/sessions/*\"",
+      "action": "\"append-audit-log --file .agent/audit/sessions.jsonl --fields role,tokens,duration\""
+    },
+    "gap_detection": {
+      "event": "task_complete",
+      "pattern": "\"docs/design/**/*.md\"",
+      "action": "\"check-design-coverage --template GDD --fail-if-missing\""
+    }
+  }
+}

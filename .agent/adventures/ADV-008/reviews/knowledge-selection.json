@@ -1,0 +1,13 @@
+{
+  "adventure_id": "ADV-008",
+  "selected_indices": [
+    1,
+    2,
+    3,
+    4,
+    5
+  ],
+  "recorded_by": "console",
+  "recorded_at": "2026-04-14T23:20:21Z",
+  "note": "To apply: /team-pipeline:adventure-review (or invoke knowledge-extractor with these indices)."
+}

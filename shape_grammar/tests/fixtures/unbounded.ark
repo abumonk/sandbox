@@ -1,0 +1,43 @@
+// ============================================================
+// unbounded.ark — Deliberate counterexample for TC-04d.
+//
+// Declares a ShapeGrammar island with max_depth = 10 and a
+// Rule class whose derivation is unbounded: the grammar has
+// no base-case (terminal) rule, so any derivation starting
+// from axiom "A" recurses A → B → C → ... forever.
+//
+// This file is syntactically valid Ark and parses without error.
+// The semantic property (unbounded derivation depth) is caught only
+// by shape_grammar/tools/verify/termination.py.
+//
+// For testing: extract_ir produces entities + max_depth=10.
+// The test (test_verifier.py::test_termination_fails_on_unbounded_fixture)
+// injects concrete IRRule instances into ir.rules to simulate the
+// A -> B -> C chain. This mirrors how T15 example grammars will
+// populate ir.rules; the structural spec here proves the file is
+// well-formed Ark, while the injected rules provide the verifier
+// with the unbounded derivation chain to analyse.
+// ============================================================
+
+// Rule class: structural declaration (no base-case rule)
+class Rule {
+    $data id:          String
+    $data lhs:         String
+    $data is_terminal: Bool = false
+}
+
+// ShapeGrammar island: max_depth is set but rules recurse without
+// a terminal exit (A -> B -> C chain exceeds max_depth = 3 trivially).
+island ShapeGrammar {
+    strategy: code
+    description: "Unbounded-derivation counterexample: A->B->C, no terminal, max_depth=3"
+
+    $data max_depth: Int [1 .. 100]
+    $data seed:      Int [0 .. 2147483647]
+    $data axiom:     String
+
+    contains: [Rule]
+
+    invariant: $data max_depth > 0
+    invariant: $data seed >= 0
+}

@@ -1,0 +1,133 @@
+import stdlib.types
+
+// ============================================================
+// shape_grammar.ark — Core entity declarations for the
+// ShapeML-style procedural shape grammar system.
+//
+// Entities declared here:
+//   - Shape          (abstraction) — abstract derivation node
+//   - Rule           (class)       — non-terminal grammar rule
+//   - Operation      (abstraction) — abstract operation base
+//   - AttrEntry      (class)       — key/value pair for Scope attrs
+//   - Scope          (class)       — transform + attribute bundle
+//   - Terminal       (class)       — runtime terminal node
+//   - ShapeGrammar   (island)      — top-level grammar container
+//
+// Vec3 is imported from stdlib.types (x: Float, y: Float, z: Float).
+// Operation subclasses (ExtrudeOp, SplitOp, etc.) are in operations.ark.
+// SemanticLabel and Provenance are in semantic.ark.
+// ============================================================
+
+// ============================================================
+// SHAPE — abstract contract for any derivation-tree node
+// ============================================================
+
+abstraction Shape {
+    @in  { scope: Vec3, seed: Int }
+    @out[] { }
+    invariant: true
+}
+
+// ============================================================
+// RULE — concrete grammar rule (non-terminal)
+// ============================================================
+
+class Rule {
+    $data id:          String
+    $data lhs:         String
+    $data is_terminal: Bool = false
+
+    #process[strategy: code] {
+        description: "Rule application is handled by the evaluator"
+    }
+}
+
+// ============================================================
+// OPERATION — abstract base for all operation primitives
+// ============================================================
+
+abstraction Operation {
+    @in  { }
+    @out[] { }
+    invariant: true
+}
+
+// ============================================================
+// ATTRENTRY — typed key/value pair for Scope.attrs workaround
+//
+// Values are type-tagged strings:
+//   "float:3.14"    -> Python float(3.14)
+//   "bool:true"     -> Python True
+//   "string:facade" -> Python "facade"
+//
+// See: research/ark-as-host-feasibility.md §4.1
+// ============================================================
+
+class AttrEntry {
+    $data key:   String
+    $data value: String
+
+    #process[strategy: code] {
+        description: "AttrEntry is immutable data; identity process"
+    }
+}
+
+// ============================================================
+// SCOPE — transform + attribute bundle carried through derivation
+//
+// Vec3 fields (translation, rotation, scale, size) use the stdlib
+// Vec3 struct directly (x: Float, y: Float, z: Float).
+// The heterogeneous attrs map is encoded as [AttrEntry] — see §4.1.
+// ============================================================
+
+class Scope {
+    $data translation: Vec3
+    $data rotation:    Vec3
+    $data scale:       Vec3
+    $data size:        Vec3
+    $data attrs:       [AttrEntry]
+
+    #process[strategy: code] {
+        description: "Scope is immutable; push() returns a new Scope in evaluator"
+    }
+}
+
+// ============================================================
+// TERMINAL — runtime terminal node (leaf of the derivation tree)
+//
+// Terminal nodes are emitted by the evaluator; they are declared
+// here as a class so the parsed AST can reference them by type.
+// ============================================================
+
+class Terminal {
+    $data name:           String
+    $data semantic_label: String
+
+    #process[strategy: code] {
+        description: "Terminal is the leaf of a derivation; no further expansion"
+    }
+}
+
+// ============================================================
+// SHAPEGRAMMER ISLAND — top-level grammar container
+//
+// max_depth and seed have Z3-verified range constraints.
+// axiom referential integrity (axiom matches a Rule.id) is
+// delegated to shape_grammar/tools/verify/scope_safety.py —
+// the set of valid rule names is not static at write time.
+// See: research/ark-as-host-feasibility.md §4.2
+// ============================================================
+
+island ShapeGrammar {
+    strategy: code
+    description: "Top-level shape grammar container"
+
+    $data max_depth: Int [1 .. 100]
+    $data seed:      Int [0 .. 2147483647]
+    $data axiom:     String
+
+    contains: [Rule]
+
+    invariant: $data max_depth > 0
+    invariant: $data seed >= 0
+}

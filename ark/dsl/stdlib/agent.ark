@@ -1,0 +1,111 @@
+// ARK Standard Library — Agent Schema
+// Defines struct and enum types for the agent subsystem:
+// platform gateways, backend execution environments, model providers,
+// skill lifecycle, message formatting, and learning modes.
+
+import stdlib.types
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+// Supported messaging and interaction platforms
+enum Platform {
+    terminal,   // Local terminal / CLI session
+    telegram,   // Telegram bot integration
+    discord,    // Discord bot integration
+    slack,      // Slack app integration
+    whatsapp,   // WhatsApp business API
+    signal,     // Signal messenger integration
+    webhook     // Generic HTTP webhook endpoint
+}
+
+// Execution backend environments for agent tools and processes
+enum BackendType {
+    local,        // Local machine process execution
+    docker,       // Docker container sandbox
+    ssh,          // Remote SSH session
+    daytona,      // Daytona cloud dev environment
+    singularity,  // Singularity/Apptainer HPC container
+    modal         // Modal serverless compute platform
+}
+
+// LLM provider integrations available to agents
+enum ModelProvider {
+    nous,        // Nous Research hosted models
+    openrouter,  // OpenRouter API aggregator
+    openai,      // OpenAI API (GPT family)
+    anthropic,   // Anthropic API (Claude family)
+    local        // Locally hosted model (e.g. Ollama, llama.cpp)
+}
+
+// Lifecycle status of a registered skill
+enum SkillStatus {
+    active,      // Skill is live and available for use
+    deprecated,  // Skill is discouraged — successor exists
+    draft,       // Skill is under development, not yet stable
+    archived     // Skill is retired and no longer loaded
+}
+
+// Message formatting mode for agent responses
+enum MessageFormat {
+    plain,     // Unformatted plain text
+    markdown,  // Markdown with headers, bold, code blocks
+    html,      // HTML markup for web rendering
+    json       // Structured JSON payload
+}
+
+// Learning data collection and feedback mode
+enum LearningMode {
+    passive,     // Record interactions without active feedback loops
+    active,      // Solicit explicit feedback after each interaction
+    supervised   // Human reviews and annotates sessions offline
+}
+
+// ============================================================
+// STRUCTS
+// ============================================================
+
+// A routing rule mapping a platform to an input pattern
+struct GatewayRoute {
+    platform: Platform,  // Platform this route applies to
+    pattern: String,     // Regex or glob pattern to match incoming messages
+    priority: Int        // Higher value routes are evaluated first
+}
+
+// Sampling parameters for LLM inference
+struct ModelParams {
+    temperature: Float,  // Sampling temperature — 0.0 (greedy) to 2.0 (creative)
+    max_tokens: Int,     // Maximum tokens to generate per response
+    top_p: Float         // Nucleus sampling threshold — top probability mass to consider
+}
+
+// Resource consumption limits for a backend execution context
+struct ResourceLimits {
+    cpu_cores: Int,       // Number of CPU cores allocated
+    memory_mb: Int,       // RAM limit in megabytes
+    timeout_seconds: Int, // Maximum wall-clock execution time in seconds
+    gpu: Bool             // Whether GPU access is enabled
+}
+
+// A trigger rule that activates a skill based on input pattern
+struct SkillTrigger {
+    pattern: String,     // Regex or keyword pattern matched against user input
+    priority: Int,       // Precedence when multiple triggers match (higher wins)
+    description: String  // Human-readable explanation of when this trigger fires
+}
+
+// A recorded self-improvement event with before/after scores
+struct ImprovementEntry {
+    timestamp: String,       // ISO 8601 timestamp of the improvement event
+    old_score: Float,        // Performance score before the improvement
+    new_score: Float,        // Performance score after the improvement
+    change_summary: String   // Brief description of what was changed and why
+}
+
+// A cron-style schedule for periodic agent tasks
+struct CronSchedule {
+    expression: String,  // Cron expression (e.g. "0 9 * * 1-5" for weekday 9am)
+    timezone: String,    // IANA timezone identifier (e.g. "UTC", "America/New_York")
+    enabled: Bool        // Whether this schedule is currently active
+}

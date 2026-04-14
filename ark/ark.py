@@ -21,6 +21,11 @@ Usage:
   ark codegraph query dead-code         → find dead code
   ark codegraph query complexity [--threshold N]  → find complex functions
   ark codegraph graph <path> [--out F]  → generate interactive HTML visualization
+  ark evolution run    <spec.ark> [--run <name>]  → run evolution loop(s)
+  ark evolution status <spec.ark>                  → list evolution_run items and status
+  ark agent    codegen <file.ark> [--out <dir>]   → generate agent artifacts (YAML/MD)
+  ark agent    verify  <file.ark>                  → run agent-specific Z3 checks
+  ark visual   pipeline|codegen|verify <file>      → visual pipeline, codegen, or verify
 """
 
 import sys
@@ -41,6 +46,9 @@ sys.path.insert(0, str(TOOLS / "visualizer"))
 sys.path.insert(0, str(TOOLS / "diff"))
 sys.path.insert(0, str(TOOLS / "watch"))
 sys.path.insert(0, str(TOOLS / "dispatch"))
+sys.path.insert(0, str(TOOLS / "evolution"))
+sys.path.insert(0, str(TOOLS / "agent"))
+sys.path.insert(0, str(TOOLS / "visual"))
 sys.path.insert(0, str(TOOLS))  # allows: import codegraph.indexer
 
 
@@ -543,6 +551,324 @@ Usage:
         sys.exit(1)
 
 
+def cmd_evolution(args):
+    """Evolution subcommands: run, status."""
+
+    EVOLUTION_USAGE = """\
+Usage:
+  ark evolution run    <spec.ark> [--run <name>]   Run evolution loop(s) from spec
+  ark evolution status <spec.ark>                   List all evolution_run items and status
+"""
+
+    if not args or args[0] in ("-h", "--help"):
+        print(EVOLUTION_USAGE)
+        return
+
+    sub = args[0]
+    rest = args[1:]
+
+    if sub == "run":
+        if not rest:
+            print("Usage: ark evolution run <spec.ark> [--run <name>]", file=sys.stderr)
+            sys.exit(1)
+
+        filepath = Path(rest[0])
+        if not filepath.exists():
+            print(f"Error: file not found: {filepath}", file=sys.stderr)
+            sys.exit(1)
+
+        # Parse optional --run <name>
+        run_name = None
+        for i, a in enumerate(rest[1:], 1):
+            if a == "--run" and i + 1 < len(rest):
+                run_name = rest[i + 1]
+
+        source = filepath.read_text(encoding="utf-8")
+        ark_file = _safe_parse(source, file_path=filepath)
+
+        # Collect evolution_run items from parsed ArkFile
+        evolution_runs = getattr(ark_file, "evolution_runs", {})
+        if not evolution_runs:
+            print("No evolution_run items found in spec.", file=sys.stderr)
+            sys.exit(1)
+
+        # Filter to specific run if --run was given
+        if run_name is not None:
+            if run_name not in evolution_runs:
+                known = ", ".join(sorted(evolution_runs.keys()))
+                print(
+                    f"Error: unknown evolution_run name {run_name!r}. "
+                    f"Known runs: {known}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            targets = {run_name: evolution_runs[run_name]}
+        else:
+            targets = evolution_runs
+
+        from evolution_runner import resolve_context, run_evolution
+
+        for name, er in targets.items():
+            print(f"\n{'='*60}")
+            print(f"  Evolution run: {name}")
+            print(f"{'='*60}")
+
+            # Convert dataclass to dict if needed
+            if hasattr(er, "__dataclass_fields__"):
+                import dataclasses
+                er_dict = dataclasses.asdict(er)
+            else:
+                er_dict = er
+
+            try:
+                context = resolve_context(er_dict, ark_file)
+            except ValueError as exc:
+                print(f"  Error resolving context: {exc}", file=sys.stderr)
+                sys.exit(1)
+
+            report = run_evolution(context)
+
+            print(f"  Target:      {report.target_name}")
+            print(f"  Status:      {report.status}")
+            print(f"  Generations: {report.generations}")
+            print(f"  Best fitness:{report.best_fitness:.4f}")
+            print(f"  Benchmark:   {'PASSED' if report.benchmark_passed else 'FAILED'}")
+            if report.fitness_trajectory:
+                traj = ", ".join(f"{v:.3f}" for v in report.fitness_trajectory)
+                print(f"  Trajectory:  [{traj}]")
+            if report.constraint_results:
+                print(f"  Constraints:")
+                for cr in report.constraint_results:
+                    status_str = getattr(cr, "status", str(cr))
+                    print(f"    - {status_str}")
+
+    elif sub == "status":
+        if not rest:
+            print("Usage: ark evolution status <spec.ark>", file=sys.stderr)
+            sys.exit(1)
+
+        filepath = Path(rest[0])
+        if not filepath.exists():
+            print(f"Error: file not found: {filepath}", file=sys.stderr)
+            sys.exit(1)
+
+        source = filepath.read_text(encoding="utf-8")
+        ark_file = _safe_parse(source, file_path=filepath)
+
+        evolution_runs = getattr(ark_file, "evolution_runs", {})
+        if not evolution_runs:
+            print("No evolution_run items found in spec.")
+            return
+
+        print(f"Evolution runs in {filepath.name}:")
+        print(f"  {'Name':<24} {'Status':<12} {'Target':<20} {'Optimizer':<16} {'Dataset'}")
+        print(f"  {'-'*24} {'-'*12} {'-'*20} {'-'*16} {'-'*16}")
+        for name, er in evolution_runs.items():
+            if hasattr(er, "__dataclass_fields__"):
+                status = getattr(er, "status", None) or "pending"
+                target_ref = getattr(er, "target_ref", None) or ""
+                optimizer_ref = getattr(er, "optimizer_ref", None) or ""
+                dataset_ref = getattr(er, "dataset_ref", None) or ""
+            else:
+                status = er.get("status") or "pending"
+                target_ref = er.get("target_ref") or ""
+                optimizer_ref = er.get("optimizer_ref") or ""
+                dataset_ref = er.get("dataset_ref") or ""
+            print(f"  {name:<24} {status:<12} {target_ref:<20} {optimizer_ref:<16} {dataset_ref}")
+
+    else:
+        print(f"Unknown evolution subcommand: {sub}", file=sys.stderr)
+        print(EVOLUTION_USAGE)
+        sys.exit(1)
+
+
+def cmd_agent(args):
+    """Agent subcommands: codegen, verify."""
+
+    AGENT_USAGE = """\
+Usage:
+  ark agent codegen <file.ark> [--out <dir>]   Generate agent artifacts (YAML/MD)
+  ark agent verify  <file.ark>                  Run agent-specific Z3 verification checks
+"""
+
+    if not args or args[0] in ("-h", "--help"):
+        print(AGENT_USAGE)
+        return
+
+    sub = args[0]
+    rest = args[1:]
+
+    if sub == "codegen":
+        if not rest:
+            print("Usage: ark agent codegen <file.ark> [--out <dir>]", file=sys.stderr)
+            sys.exit(1)
+
+        filepath = Path(rest[0])
+        if not filepath.exists():
+            print(f"Error: file not found: {filepath}", file=sys.stderr)
+            sys.exit(1)
+
+        out_dir = None
+        for i, a in enumerate(rest[1:], 1):
+            if a == "--out" and i + 1 < len(rest):
+                out_dir = Path(rest[i + 1])
+
+        source = filepath.read_text(encoding="utf-8")
+        ark_file = _safe_parse(source, file_path=filepath)
+
+        from ark_parser import to_json
+        import json as _json
+        ast_json = _json.loads(to_json(ark_file))
+
+        from agent_codegen import generate
+        results = generate(ast_json, out_dir)
+        if not out_dir:
+            for fname, content in results.items():
+                sep = "#" if fname.endswith((".yaml", ".txt", ".md")) else "//"
+                print(f"\n{sep} === {fname} ===")
+                print(content)
+        print(f"\nGenerated {len(results)} agent artifact(s)")
+
+    elif sub == "verify":
+        if not rest:
+            print("Usage: ark agent verify <file.ark>", file=sys.stderr)
+            sys.exit(1)
+
+        filepath = Path(rest[0])
+        if not filepath.exists():
+            print(f"Error: file not found: {filepath}", file=sys.stderr)
+            sys.exit(1)
+
+        source = filepath.read_text(encoding="utf-8")
+        ark_file = _safe_parse(source, file_path=filepath)
+
+        from ark_parser import to_json
+        import json as _json
+        ast_json = _json.loads(to_json(ark_file))
+
+        from agent_verify import verify_agent
+        results = verify_agent(ast_json)
+        failed = sum(1 for r in results if r.get("status") == "fail")
+        if failed > 0:
+            sys.exit(1)
+
+    else:
+        print(f"Unknown agent subcommand: {sub}", file=sys.stderr)
+        print(AGENT_USAGE)
+        sys.exit(1)
+
+
+def cmd_visual(args):
+    """Visual subcommands: pipeline, codegen, verify."""
+
+    VISUAL_USAGE = """\
+Usage:
+  ark visual pipeline <file.ark>             Run the full visual pipeline
+  ark visual codegen  <file.ark> [--out DIR] Generate visual artifacts
+  ark visual verify   <file.ark>             Run visual verification checks
+"""
+
+    if not args or args[0] in ("-h", "--help"):
+        print(VISUAL_USAGE)
+        return
+
+    sub = args[0]
+    rest = args[1:]
+
+    if sub == "pipeline":
+        if not rest:
+            print("Usage: ark visual pipeline <file.ark>", file=sys.stderr)
+            sys.exit(1)
+
+        filepath = Path(rest[0])
+        if not filepath.exists():
+            print(f"Error: file not found: {filepath}", file=sys.stderr)
+            sys.exit(1)
+
+        source = filepath.read_text(encoding="utf-8")
+        ark_file = _safe_parse(source, file_path=filepath)
+
+        from ark_parser import to_json
+        import json as _json
+        ast_json = _json.loads(to_json(ark_file))
+
+        try:
+            from visual_runner import run_visual_pipeline
+            results = run_visual_pipeline(ast_json)
+            import json as _json2
+            print(_json2.dumps(results, indent=2, ensure_ascii=False, default=str))
+        except ImportError:
+            print("visual_runner module not found (will be available after T016)", file=sys.stderr)
+            sys.exit(1)
+
+    elif sub == "codegen":
+        if not rest:
+            print("Usage: ark visual codegen <file.ark> [--out DIR]", file=sys.stderr)
+            sys.exit(1)
+
+        filepath = Path(rest[0])
+        if not filepath.exists():
+            print(f"Error: file not found: {filepath}", file=sys.stderr)
+            sys.exit(1)
+
+        out_dir = None
+        for i, a in enumerate(rest[1:], 1):
+            if a == "--out" and i + 1 < len(rest):
+                out_dir = Path(rest[i + 1])
+
+        source = filepath.read_text(encoding="utf-8")
+        ark_file = _safe_parse(source, file_path=filepath)
+
+        from ark_parser import to_json
+        import json as _json
+        ast_json = _json.loads(to_json(ark_file))
+
+        try:
+            from visual_codegen import generate
+            results = generate(ast_json, out_dir)
+            if not out_dir:
+                for fname, content in results.items():
+                    sep = "#" if fname.endswith((".yaml", ".txt", ".md")) else "//"
+                    print(f"\n{sep} === {fname} ===")
+                    print(content)
+            print(f"\nGenerated {len(results)} visual artifact(s)")
+        except ImportError:
+            print("visual_codegen module not found (will be available after T016)", file=sys.stderr)
+            sys.exit(1)
+
+    elif sub == "verify":
+        if not rest:
+            print("Usage: ark visual verify <file.ark>", file=sys.stderr)
+            sys.exit(1)
+
+        filepath = Path(rest[0])
+        if not filepath.exists():
+            print(f"Error: file not found: {filepath}", file=sys.stderr)
+            sys.exit(1)
+
+        source = filepath.read_text(encoding="utf-8")
+        ark_file = _safe_parse(source, file_path=filepath)
+
+        from ark_parser import to_json
+        import json as _json
+        ast_json = _json.loads(to_json(ark_file))
+
+        try:
+            from visual_verify import verify_visual
+            results = verify_visual(ast_json)
+            failed = sum(1 for r in results if r.get("status") == "fail")
+            if failed > 0:
+                sys.exit(1)
+        except ImportError:
+            print("visual_verify module not found (will be available after T016)", file=sys.stderr)
+            sys.exit(1)
+
+    else:
+        print(f"Unknown visual subcommand: {sub}", file=sys.stderr)
+        print(VISUAL_USAGE)
+        sys.exit(1)
+
+
 COMMANDS = {
     "parse": cmd_parse,
     "verify": cmd_verify,
@@ -555,6 +881,9 @@ COMMANDS = {
     "pipeline": cmd_pipeline,
     "codegraph": cmd_codegraph,
     "studio": cmd_studio,
+    "evolution": cmd_evolution,
+    "agent": cmd_agent,
+    "visual": cmd_visual,
 }
 
 

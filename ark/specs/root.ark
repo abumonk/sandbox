@@ -113,10 +113,17 @@ registry SystemRegistry {
 
   // --- Infra islands ---
   register CodeGraphIsland   { priority: 50 }
+  register AgentSystem       { phase: infra, priority: 40 }
+  register VisualIsland      { phase: infra, priority: 45 }
 
   // --- Studio hierarchy specs ---
   register ArkStudio         { phase: meta, priority: 1 }
   register GameStudio        { phase: meta, priority: 2 }
+  register ArkAgent          { phase: meta, priority: 3 }
+
+  // --- Evolution specs ---
+  register EvolutionSkills   { source: "specs/meta/evolution_skills.ark", phase: meta, priority: 5 }
+  register EvolutionRoles    { source: "specs/meta/evolution_roles.ark", phase: meta, priority: 6 }
 
   // --- Runtime islands (заполняется по мере разработки) ---
   // register VehiclePhysics  { phase: runtime, priority: 10 }

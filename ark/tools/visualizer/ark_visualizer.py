@@ -83,8 +83,571 @@ def generate_graph_data(ast_json: dict) -> dict:
                 links.append({"source": "registry", "target": ename, "kind": "registers"})
 
     orgchart = extract_orgchart_data(ast_json)
+    evolution = extract_evolution_data(ast_json)
+    agent = extract_agent_data(ast_json)
+    visual = extract_visual_data(ast_json)
 
-    return {"nodes": nodes, "links": links, "groups": groups, "orgchart": orgchart}
+    # Merge evolution nodes/links into main graph
+    nodes.extend(evolution["nodes"])
+    links.extend(evolution["links"])
+
+    # Merge agent nodes/links into main graph
+    nodes.extend(agent["nodes"])
+    links.extend(agent["links"])
+
+    # Merge visual nodes/links into main graph
+    nodes.extend(visual["nodes"])
+    links.extend(visual["links"])
+
+    return {"nodes": nodes, "links": links, "groups": groups, "orgchart": orgchart, "evolution": evolution, "agent": agent, "visual": visual}
+
+
+# ============================================================
+# AGENT DATA EXTRACTION
+# ============================================================
+
+# Agent item kinds
+AGENT_KINDS = {
+    "agent",
+    "platform",
+    "gateway",
+    "execution_backend",
+    "skill",
+    "learning_config",
+    "cron_task",
+    "model_config",
+}
+
+# Agent item kind → node stroke color (cyan/teal family)
+AGENT_KIND_COLORS = {
+    "agent":             "#06b6d4",  # cyan
+    "platform":          "#14b8a6",  # teal
+    "gateway":           "#0891b2",  # dark cyan
+    "execution_backend": "#0d9488",  # dark teal
+    "skill":             "#22d3ee",  # light cyan
+    "learning_config":   "#2dd4bf",  # light teal
+    "cron_task":         "#67e8f9",  # pale cyan
+    "model_config":      "#5eead4",  # pale teal
+}
+
+
+def _agent_tooltip(item: dict) -> dict:
+    """Extract key tooltip properties from an agent AST item."""
+    props = {}
+    kind = item.get("kind", "")
+
+    if kind == "agent":
+        if item.get("model_ref"):
+            props["model"] = str(item["model_ref"])
+        backends = item.get("backends", [])
+        if backends:
+            props["backends"] = len(backends)
+        if item.get("description"):
+            props["description"] = str(item["description"])[:50]
+
+    elif kind == "platform":
+        if item.get("platform_type"):
+            props["type"] = str(item["platform_type"])
+        if item.get("description"):
+            props["description"] = str(item["description"])[:50]
+
+    elif kind == "gateway":
+        if item.get("agent_ref"):
+            props["agent"] = str(item["agent_ref"])
+        platforms = item.get("platforms", [])
+        if platforms:
+            props["platforms"] = len(platforms)
+
+    elif kind == "execution_backend":
+        if item.get("backend_type"):
+            props["type"] = str(item["backend_type"])
+        if item.get("runtime"):
+            props["runtime"] = str(item["runtime"])
+
+    elif kind == "skill":
+        if item.get("description"):
+            props["description"] = str(item["description"])[:50]
+        if item.get("version"):
+            props["version"] = str(item["version"])
+
+    elif kind == "learning_config":
+        if item.get("strategy"):
+            props["strategy"] = str(item["strategy"])
+        if item.get("dataset"):
+            props["dataset"] = str(item["dataset"])
+
+    elif kind == "cron_task":
+        if item.get("schedule"):
+            props["schedule"] = str(item["schedule"])
+        if item.get("agent_ref"):
+            props["agent"] = str(item["agent_ref"])
+        if item.get("platform_delivery"):
+            props["delivery"] = str(item["platform_delivery"])
+
+    elif kind == "model_config":
+        if item.get("model"):
+            props["model"] = str(item["model"])
+        if item.get("provider"):
+            props["provider"] = str(item["provider"])
+        if item.get("fallback"):
+            props["fallback"] = str(item["fallback"])
+
+    return props
+
+
+def extract_agent_data(ast_json: dict) -> dict:
+    """
+    Extract agent architecture items from AST as graph nodes and edges.
+
+    Returns:
+        {
+          "nodes": [...],   # agent node dicts ready for d3
+          "links": [...],   # cross-reference edge dicts
+          "has_agents": bool
+        }
+    """
+    agent_nodes = []
+    agent_links = []
+
+    items = ast_json.get("items", [])
+    for item in items:
+        kind = item.get("kind", "")
+        if kind not in AGENT_KINDS:
+            continue
+
+        name = item.get("name", item.get("id", "?"))
+        tooltip = _agent_tooltip(item)
+
+        node = {
+            "id": name,
+            "kind": kind,
+            "group": kind,
+            "tooltip": tooltip,
+        }
+        agent_nodes.append(node)
+
+        # Extract edges for gateway
+        if kind == "gateway":
+            # gateway → agent (routes_for)
+            agent_ref = item.get("agent_ref")
+            if agent_ref:
+                agent_links.append({
+                    "source": name,
+                    "target": agent_ref,
+                    "kind": "routes_for",
+                })
+            # gateway → platform nodes (connects)
+            for plat in item.get("platforms", []):
+                plat_name = plat if isinstance(plat, str) else plat.get("name", "?")
+                agent_links.append({
+                    "source": name,
+                    "target": plat_name,
+                    "kind": "connects",
+                })
+
+        # Extract edges for agent
+        elif kind == "agent":
+            # agent → model_config (uses_model)
+            model_ref = item.get("model_ref")
+            if model_ref:
+                agent_links.append({
+                    "source": name,
+                    "target": model_ref,
+                    "kind": "uses_model",
+                })
+            # agent → execution_backend (runs_on)
+            for backend in item.get("backends", []):
+                backend_name = backend if isinstance(backend, str) else backend.get("name", "?")
+                agent_links.append({
+                    "source": name,
+                    "target": backend_name,
+                    "kind": "runs_on",
+                })
+
+        # Extract edges for cron_task
+        elif kind == "cron_task":
+            # cron_task → agent (schedules)
+            agent_ref = item.get("agent_ref")
+            if agent_ref:
+                agent_links.append({
+                    "source": name,
+                    "target": agent_ref,
+                    "kind": "schedules",
+                })
+            # cron_task → platform (delivers_to)
+            platform_delivery = item.get("platform_delivery")
+            if platform_delivery:
+                agent_links.append({
+                    "source": name,
+                    "target": platform_delivery,
+                    "kind": "delivers_to",
+                })
+
+        # Extract edges for model_config
+        elif kind == "model_config":
+            # model_config → model_config (falls_back_to)
+            fallback = item.get("fallback")
+            if fallback:
+                agent_links.append({
+                    "source": name,
+                    "target": fallback,
+                    "kind": "falls_back_to",
+                    "dashed": True,
+                })
+
+    return {
+        "nodes": agent_nodes,
+        "links": agent_links,
+        "has_agents": len(agent_nodes) > 0,
+    }
+
+
+# ============================================================
+# VISUAL DATA EXTRACTION
+# ============================================================
+
+# Visual item kinds
+VISUAL_KINDS = {
+    "diagram",
+    "preview",
+    "annotation",
+    "visual_review",
+    "screenshot",
+    "visual_search",
+    "render_config",
+}
+
+# Visual item kind → node stroke color (orange/amber family)
+VISUAL_KIND_COLORS = {
+    "diagram":       "#f59e0b",  # amber
+    "preview":       "#d97706",  # dark amber
+    "annotation":    "#fb923c",  # orange
+    "visual_review": "#ea580c",  # dark orange
+    "screenshot":    "#fbbf24",  # yellow-amber
+    "visual_search": "#f97316",  # bright orange
+    "render_config": "#fcd34d",  # pale amber
+}
+
+
+def _visual_tooltip(item: dict) -> dict:
+    """Extract key tooltip properties from a visual AST item."""
+    props = {}
+    kind = item.get("kind", "")
+
+    if kind == "diagram":
+        if item.get("format"):
+            props["format"] = str(item["format"])
+        if item.get("source"):
+            props["source"] = str(item["source"])[:50]
+        if item.get("render_config_ref"):
+            props["render_config"] = str(item["render_config_ref"])
+
+    elif kind == "preview":
+        if item.get("target_ref"):
+            props["target"] = str(item["target_ref"])
+        if item.get("render_config_ref"):
+            props["render_config"] = str(item["render_config_ref"])
+        if item.get("resolution"):
+            props["resolution"] = str(item["resolution"])
+
+    elif kind == "annotation":
+        if item.get("target_ref"):
+            props["target"] = str(item["target_ref"])
+        if item.get("label"):
+            props["label"] = str(item["label"])[:50]
+        if item.get("annotation_type"):
+            props["type"] = str(item["annotation_type"])
+
+    elif kind == "visual_review":
+        if item.get("target_ref"):
+            props["target"] = str(item["target_ref"])
+        if item.get("status"):
+            props["status"] = str(item["status"])
+        if item.get("reviewer"):
+            props["reviewer"] = str(item["reviewer"])
+
+    elif kind == "screenshot":
+        if item.get("source"):
+            props["source"] = str(item["source"])[:50]
+        if item.get("resolution"):
+            props["resolution"] = str(item["resolution"])
+        if item.get("timestamp"):
+            props["timestamp"] = str(item["timestamp"])
+
+    elif kind == "visual_search":
+        if item.get("query"):
+            props["query"] = str(item["query"])[:50]
+        if item.get("index"):
+            props["index"] = str(item["index"])
+        if item.get("result_count") is not None:
+            props["results"] = str(item["result_count"])
+
+    elif kind == "render_config":
+        if item.get("renderer"):
+            props["renderer"] = str(item["renderer"])
+        if item.get("quality"):
+            props["quality"] = str(item["quality"])
+        if item.get("output_format"):
+            props["format"] = str(item["output_format"])
+
+    return props
+
+
+def extract_visual_data(ast_json: dict) -> dict:
+    """
+    Extract visual pipeline items from AST as graph nodes and edges.
+
+    Returns:
+        {
+          "nodes": [...],   # visual node dicts ready for d3
+          "links": [...],   # cross-reference edge dicts
+          "has_visuals": bool
+        }
+    """
+    visual_nodes = []
+    visual_links = []
+
+    items = ast_json.get("items", [])
+    for item in items:
+        kind = item.get("kind", "")
+        if kind not in VISUAL_KINDS:
+            continue
+
+        name = item.get("name", item.get("id", "?"))
+        tooltip = _visual_tooltip(item)
+
+        node = {
+            "id": name,
+            "kind": kind,
+            "group": kind,
+            "tooltip": tooltip,
+        }
+        visual_nodes.append(node)
+
+        # Extract edges for visual_review → target (diagram/preview/screenshot)
+        if kind == "visual_review":
+            target_ref = item.get("target_ref")
+            if target_ref:
+                visual_links.append({
+                    "source": name,
+                    "target": target_ref,
+                    "kind": "reviews",
+                })
+
+        # Extract edges for annotation → target
+        elif kind == "annotation":
+            target_ref = item.get("target_ref")
+            if target_ref:
+                visual_links.append({
+                    "source": name,
+                    "target": target_ref,
+                    "kind": "annotates",
+                })
+
+        # Extract edges for diagram → render_config
+        elif kind == "diagram":
+            render_ref = item.get("render_config_ref")
+            if render_ref:
+                visual_links.append({
+                    "source": name,
+                    "target": render_ref,
+                    "kind": "uses_render_config",
+                })
+
+        # Extract edges for preview → render_config
+        elif kind == "preview":
+            render_ref = item.get("render_config_ref")
+            if render_ref:
+                visual_links.append({
+                    "source": name,
+                    "target": render_ref,
+                    "kind": "uses_render_config",
+                })
+
+    return {
+        "nodes": visual_nodes,
+        "links": visual_links,
+        "has_visuals": len(visual_nodes) > 0,
+    }
+
+
+# ============================================================
+# EVOLUTION DATA EXTRACTION
+# ============================================================
+
+# Evolution item kinds and their group labels
+EVOLUTION_KINDS = {
+    "evolution_target",
+    "eval_dataset",
+    "fitness_function",
+    "optimizer",
+    "benchmark_gate",
+    "evolution_run",
+    "evolution_constraint",
+    "constraint",  # alias sometimes used in .ark files
+}
+
+
+def _evo_tooltip(item: dict) -> dict:
+    """Extract key tooltip properties from an evolution AST item."""
+    props = {}
+    kind = item.get("kind", "")
+
+    if kind == "evolution_target":
+        if item.get("tier") is not None:
+            props["tier"] = str(item["tier"])
+        if item.get("engine"):
+            props["engine"] = str(item["engine"])
+        if item.get("objective"):
+            props["objective"] = str(item["objective"])
+        constraint_refs = item.get("constraints", [])
+        if constraint_refs:
+            props["constraints"] = len(constraint_refs)
+
+    elif kind == "eval_dataset":
+        if item.get("source"):
+            props["source"] = str(item["source"])
+        if item.get("size") is not None:
+            props["size"] = str(item["size"])
+        if item.get("split"):
+            props["split"] = str(item["split"])
+
+    elif kind == "fitness_function":
+        dims = item.get("dimensions", [])
+        props["dimensions"] = len(dims)
+        if item.get("aggregation"):
+            props["aggregation"] = str(item["aggregation"])
+
+    elif kind == "optimizer":
+        if item.get("engine"):
+            props["engine"] = str(item["engine"])
+        if item.get("population") is not None:
+            props["population"] = str(item["population"])
+        if item.get("generations") is not None:
+            props["generations"] = str(item["generations"])
+
+    elif kind == "benchmark_gate":
+        if item.get("tolerance") is not None:
+            props["tolerance"] = str(item["tolerance"])
+        if item.get("metric"):
+            props["metric"] = str(item["metric"])
+        if item.get("threshold") is not None:
+            props["threshold"] = str(item["threshold"])
+
+    elif kind == "evolution_run":
+        if item.get("status"):
+            props["status"] = str(item["status"])
+        if item.get("target_ref"):
+            props["target_ref"] = str(item["target_ref"])
+        if item.get("optimizer_ref"):
+            props["optimizer_ref"] = str(item["optimizer_ref"])
+        if item.get("dataset_ref"):
+            props["dataset_ref"] = str(item["dataset_ref"])
+        if item.get("gate_ref"):
+            props["gate_ref"] = str(item["gate_ref"])
+
+    elif kind in ("evolution_constraint", "constraint"):
+        if item.get("enforcement"):
+            props["enforcement"] = str(item["enforcement"])
+        if item.get("tolerance") is not None:
+            props["tolerance"] = str(item["tolerance"])
+        if item.get("expression"):
+            props["expression"] = str(item["expression"])[:60]
+
+    return props
+
+
+def extract_evolution_data(ast_json: dict) -> dict:
+    """
+    Extract evolution pipeline items from AST as graph nodes and edges.
+
+    Returns:
+        {
+          "nodes": [...],   # evolution node dicts ready for d3
+          "links": [...],   # cross-reference edge dicts
+          "has_evolution": bool
+        }
+    """
+    evo_nodes = []
+    evo_links = []
+
+    items = ast_json.get("items", [])
+    for item in items:
+        kind = item.get("kind", "")
+        if kind not in EVOLUTION_KINDS:
+            continue
+
+        name = item.get("name", item.get("id", "?"))
+        tooltip = _evo_tooltip(item)
+
+        # Normalise constraint → evolution_constraint for grouping
+        group = kind if kind != "constraint" else "evolution_constraint"
+
+        node = {
+            "id": name,
+            "kind": kind,
+            "group": group,
+            "tooltip": tooltip,
+        }
+        evo_nodes.append(node)
+
+        # Extract cross-reference edges from evolution_run
+        if kind == "evolution_run":
+            # evolution_run → evolution_target
+            if item.get("target_ref"):
+                evo_links.append({
+                    "source": name,
+                    "target": item["target_ref"],
+                    "kind": "evolves",
+                })
+            # evolution_run → optimizer
+            if item.get("optimizer_ref"):
+                evo_links.append({
+                    "source": name,
+                    "target": item["optimizer_ref"],
+                    "kind": "uses_optimizer",
+                })
+            # evolution_run → eval_dataset
+            if item.get("dataset_ref"):
+                evo_links.append({
+                    "source": name,
+                    "target": item["dataset_ref"],
+                    "kind": "uses_dataset",
+                })
+            # evolution_run → benchmark_gate
+            if item.get("gate_ref"):
+                evo_links.append({
+                    "source": name,
+                    "target": item["gate_ref"],
+                    "kind": "gates_through",
+                })
+
+        # Extract constraint edges from evolution_target
+        elif kind == "evolution_target":
+            for constraint_ref in item.get("constraints", []):
+                ref_name = constraint_ref if isinstance(constraint_ref, str) else constraint_ref.get("name", "?")
+                evo_links.append({
+                    "source": name,
+                    "target": ref_name,
+                    "kind": "constrained_by",
+                    "dashed": True,
+                })
+
+        # Extract scored_by edge from eval_dataset → fitness_function
+        elif kind == "eval_dataset":
+            fitness_ref = item.get("fitness_function") or item.get("fitness_ref")
+            if fitness_ref:
+                evo_links.append({
+                    "source": name,
+                    "target": fitness_ref,
+                    "kind": "scored_by",
+                })
+
+    return {
+        "nodes": evo_nodes,
+        "links": evo_links,
+        "has_evolution": len(evo_nodes) > 0,
+    }
 
 
 # ============================================================
@@ -333,6 +896,21 @@ def generate_html(graph_data: dict, title: str = "ARK System Graph") -> str:
   .link.bridge   {{ stroke: #af8; stroke-width: 2; }}
   .link.verifies {{ stroke: #fa8; stroke-dasharray: 3 3; }}
   .link.registers {{ stroke: #888; stroke-dasharray: 2 4; }}
+  /* Evolution pipeline edge styles */
+  .link.evolves         {{ stroke: #d946ef; stroke-width: 2; }}
+  .link.uses_optimizer  {{ stroke: #a78bfa; stroke-width: 1.5; }}
+  .link.uses_dataset    {{ stroke: #818cf8; stroke-width: 1.5; }}
+  .link.gates_through   {{ stroke: #f0abfc; stroke-width: 2; }}
+  .link.constrained_by  {{ stroke: #9333ea; stroke-dasharray: 5 3; }}
+  .link.scored_by       {{ stroke: #c084fc; stroke-dasharray: 3 2; }}
+  /* Agent architecture edge styles */
+  .link.routes_for      {{ stroke: #0891b2; stroke-width: 2; }}
+  .link.connects        {{ stroke: #14b8a6; stroke-width: 1.5; }}
+  .link.uses_model      {{ stroke: #06b6d4; stroke-width: 1.5; stroke-dasharray: 4 2; }}
+  .link.runs_on         {{ stroke: #0d9488; stroke-width: 1.5; }}
+  .link.schedules       {{ stroke: #67e8f9; stroke-width: 1.5; stroke-dasharray: 6 3; }}
+  .link.delivers_to     {{ stroke: #22d3ee; stroke-width: 1.5; }}
+  .link.falls_back_to   {{ stroke: #5eead4; stroke-dasharray: 5 3; }}
 
   .link-label {{
     font-size: 9px; fill: #556;
@@ -512,11 +1090,29 @@ let currentView = 'entity'; // 'entity' | 'orgchart'
 // COLOR SCHEME
 // ============================================================
 const COLORS = {{
-  abstraction: {{ fill: '#1a1a2e', stroke: '#f8a' }},
-  class:       {{ fill: '#1a2a1a', stroke: '#8f8' }},
-  island:      {{ fill: '#1a1a3a', stroke: '#7af' }},
-  verify:      {{ fill: '#2a1a1a', stroke: '#fa8' }},
-  default:     {{ fill: '#1a1a1a', stroke: '#555' }},
+  // --- existing entity/island/studio groups ---
+  abstraction:          {{ fill: '#1a1a2e', stroke: '#f8a' }},
+  class:                {{ fill: '#1a2a1a', stroke: '#8f8' }},
+  island:               {{ fill: '#1a1a3a', stroke: '#7af' }},
+  verify:               {{ fill: '#2a1a1a', stroke: '#fa8' }},
+  default:              {{ fill: '#1a1a1a', stroke: '#555' }},
+  // --- evolution pipeline groups (purple/violet family) ---
+  evolution_target:     {{ fill: '#1e1228', stroke: '#c084fc' }},  // bright purple
+  eval_dataset:         {{ fill: '#1a1030', stroke: '#818cf8' }},  // indigo
+  fitness_function:     {{ fill: '#130e2a', stroke: '#a78bfa' }},  // violet
+  optimizer:            {{ fill: '#1c1030', stroke: '#e879f9' }},  // fuchsia
+  benchmark_gate:       {{ fill: '#1e0e2a', stroke: '#f0abfc' }},  // pink-violet
+  evolution_run:        {{ fill: '#120e20', stroke: '#d946ef' }},  // vivid magenta
+  evolution_constraint: {{ fill: '#1a0e28', stroke: '#9333ea' }},  // deep purple
+  // --- agent architecture groups (cyan/teal family) ---
+  agent:                {{ fill: '#0c1a1e', stroke: '#06b6d4' }},  // cyan
+  platform:             {{ fill: '#0c1a18', stroke: '#14b8a6' }},  // teal
+  gateway:              {{ fill: '#081820', stroke: '#0891b2' }},  // dark cyan
+  execution_backend:    {{ fill: '#081a18', stroke: '#0d9488' }},  // dark teal
+  skill:                {{ fill: '#0e1e22', stroke: '#22d3ee' }},  // light cyan
+  learning_config:      {{ fill: '#0e1e1c', stroke: '#2dd4bf' }},  // light teal
+  cron_task:            {{ fill: '#101e22', stroke: '#67e8f9' }},  // pale cyan
+  model_config:         {{ fill: '#0e1e1c', stroke: '#5eead4' }},  // pale teal
 }};
 
 // ============================================================
@@ -603,12 +1199,14 @@ function getNodeSize(node) {{
   if (currentLOD === 1) return {{ w: 140, h: 50 }};
   if (currentLOD === 2) {{
     const ports = (node.inputs?.length || 0) + (node.outputs?.length || 0);
-    return {{ w: 160, h: 55 + ports * 12 }};
+    const tooltipCount = node.tooltip ? Object.keys(node.tooltip).length : 0;
+    return {{ w: 160, h: 55 + ports * 12 + (tooltipCount > 0 ? tooltipCount * 12 : 0) }};
   }}
   // LOD 3
   const fields = (node.data?.length || 0) + (node.inputs?.length || 0) +
                  (node.outputs?.length || 0);
-  return {{ w: 200, h: 60 + fields * 14 }};
+  const tooltipCount = node.tooltip ? Object.keys(node.tooltip).length : 0;
+  return {{ w: 200, h: 60 + fields * 14 + tooltipCount * 13 }};
 }}
 
 function renderEntityGraph() {{
@@ -634,14 +1232,23 @@ function renderEntityGraph() {{
     line.setAttribute('marker-end', 'url(#arrow)');
     linkGroup.appendChild(line);
 
-    // Link labels at LOD 2+
-    if (currentLOD >= 2 && link.name) {{
+    // Link labels at LOD 2+: show name for bridges, show kind for evolution/agent edges
+    const evoEdgeKinds = ['evolves','uses_optimizer','uses_dataset','gates_through','constrained_by','scored_by'];
+    const agentEdgeKinds = ['routes_for','connects','uses_model','runs_on','schedules','delivers_to','falls_back_to'];
+    if (currentLOD >= 2 && (link.name || evoEdgeKinds.includes(link.kind) || agentEdgeKinds.includes(link.kind))) {{
       const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
       label.setAttribute('x', (s.x + t.x) / 2);
       label.setAttribute('y', (s.y + t.y) / 2 - 8);
       label.setAttribute('class', 'link-label');
       label.setAttribute('text-anchor', 'middle');
-      label.textContent = link.name;
+      if (evoEdgeKinds.includes(link.kind)) {{
+        label.setAttribute('fill', '#9333ea');
+        label.setAttribute('opacity', '0.8');
+      }} else if (agentEdgeKinds.includes(link.kind)) {{
+        label.setAttribute('fill', '#06b6d4');
+        label.setAttribute('opacity', '0.8');
+      }}
+      label.textContent = link.name || link.kind;
       linkGroup.appendChild(label);
     }}
   }}
@@ -726,6 +1333,25 @@ function renderEntityGraph() {{
         info.setAttribute('class', 'node-sublabel');
         info.textContent = `inv:${{node.invariants||0}} proc:${{node.processes||0}}`;
         g.appendChild(info);
+      }}
+    }}
+
+    // LOD 2+ : show evolution tooltip properties inline
+    if (currentLOD >= 2 && node.tooltip && Object.keys(node.tooltip).length > 0) {{
+      const colors = COLORS[node.kind] || COLORS.default;
+      let yOff = 48 + ((node.inputs?.length || 0) + (node.outputs?.length || 0)) * 12;
+      if (currentLOD >= 3) {{
+        yOff += (node.data?.length || 0) * 14 + (node.invariants || node.processes ? 14 : 0);
+      }}
+      for (const [k, v] of Object.entries(node.tooltip)) {{
+        const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        t.setAttribute('x', 12); t.setAttribute('y', yOff);
+        t.setAttribute('font-family', "'JetBrains Mono', monospace");
+        t.setAttribute('font-size', '8');
+        t.setAttribute('fill', colors.stroke);
+        t.setAttribute('opacity', '0.85');
+        t.textContent = `${{k}}: ${{v}}`;
+        g.appendChild(t); yOff += 12;
       }}
     }}
 
@@ -1094,6 +1720,37 @@ function selectNode(node) {{
 
   if (node.invariants) html += `<div class="inspector-section"><h4>Invariants</h4>${{node.invariants}}</div>`;
   if (node.processes) html += `<div class="inspector-section"><h4>Process Rules</h4>${{node.processes}}</div>`;
+
+  // Evolution node tooltip properties
+  if (node.tooltip && Object.keys(node.tooltip).length > 0) {{
+    html += `<div class="inspector-section"><h4>Evolution Properties</h4>`;
+    for (const [k, v] of Object.entries(node.tooltip)) {{
+      html += `<div style="margin:2px 0"><span style="color:#9333ea;font-size:10px">${{k}}:</span>
+        <span class="tag" style="border-color:#9333ea;color:#c084fc">${{v}}</span></div>`;
+    }}
+    html += `</div>`;
+  }}
+
+  // Show evolution cross-references in inspector
+  const evoEdgeKinds = ['evolves','uses_optimizer','uses_dataset','gates_through','constrained_by','scored_by'];
+  const outRefs = DATA.links.filter(l => l.source === node.id && evoEdgeKinds.includes(l.kind));
+  const inRefs  = DATA.links.filter(l => l.target === node.id && evoEdgeKinds.includes(l.kind));
+  if (outRefs.length) {{
+    html += `<div class="inspector-section"><h4>Evolution Out-Edges</h4>`;
+    outRefs.forEach(e => {{
+      html += `<div style="margin:2px 0"><span style="color:#818cf8;font-size:9px">${{e.kind}}</span>
+        <span class="tag" style="border-color:#d946ef;color:#f0abfc"> → ${{e.target}}</span></div>`;
+    }});
+    html += `</div>`;
+  }}
+  if (inRefs.length) {{
+    html += `<div class="inspector-section"><h4>Evolution In-Edges</h4>`;
+    inRefs.forEach(e => {{
+      html += `<div style="margin:2px 0"><span style="color:#818cf8;font-size:9px">${{e.kind}}</span>
+        <span class="tag" style="border-color:#a78bfa;color:#c084fc"> ← ${{e.source}}</span></div>`;
+    }});
+    html += `</div>`;
+  }}
 
   document.getElementById('insp-body').innerHTML = html;
 }}

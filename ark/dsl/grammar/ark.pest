@@ -34,6 +34,28 @@ item = _{
   | hook_def
   | rule_def
   | template_def
+  | evolution_target_def
+  | eval_dataset_def
+  | fitness_function_def
+  | optimizer_def
+  | benchmark_gate_def
+  | evolution_run_def
+  | constraint_def
+  | agent_def
+  | platform_def
+  | gateway_def
+  | execution_backend_def
+  | skill_def
+  | learning_config_def
+  | cron_task_def
+  | model_config_def
+  | diagram_def
+  | preview_def
+  | annotation_def
+  | visual_review_def
+  | screenshot_def
+  | visual_search_def
+  | render_config_def
 }
 
 // ============================================================
@@ -360,6 +382,384 @@ template_member = _{
 sections_stmt = { "sections:" ~ "[" ~ string_list ~ "]" }
 bound_to_stmt = { "bound_to:" ~ ident }
 string_list   = { string_literal ~ ("," ~ string_literal)* }
+
+// ============================================================
+// EVOLUTION SYSTEM
+// ============================================================
+
+// 1. evolution_target_def — model or artifact to be evolved
+evolution_target_def  = { "evolution_target" ~ ident ~ "{" ~ evolution_target_body ~ "}" }
+evolution_target_body = { evolution_target_member* }
+evolution_target_member = _{
+    tier_stmt
+  | file_ref_stmt
+  | constraints_block
+  | description_stmt
+  | data_field
+}
+
+file_ref_stmt    = { "file_ref:" ~ string_literal }
+constraints_block = { "constraints" ~ "{" ~ constraint_item* ~ "}" }
+constraint_item  = { constraint_item_member+ }
+constraint_item_member = _{
+    name_stmt
+  | type_stmt
+  | threshold_stmt
+  | enforcement_stmt
+}
+
+name_stmt        = { "name:" ~ string_literal }
+type_stmt        = { "type:" ~ ident }
+threshold_stmt   = { "threshold:" ~ expression }
+enforcement_stmt = { "enforcement:" ~ ident }
+
+// 2. eval_dataset_def — dataset used to evaluate evolved artifacts
+eval_dataset_def  = { "eval_dataset" ~ ident ~ "{" ~ eval_dataset_body ~ "}" }
+eval_dataset_body = { eval_dataset_member* }
+eval_dataset_member = _{
+    source_stmt
+  | split_stmt
+  | scoring_rubric_stmt
+  | description_stmt
+  | data_field
+}
+
+source_stmt        = { "source:" ~ string_literal }
+split_stmt         = { "split:" ~ "{" ~ split_entry ~ ("," ~ split_entry)* ~ ","? ~ "}" }
+split_entry        = { ident ~ ":" ~ number }
+scoring_rubric_stmt = { "scoring_rubric:" ~ string_literal }
+
+// 3. fitness_function_def — multi-dimensional scoring function
+fitness_function_def  = { "fitness_function" ~ ident ~ "{" ~ fitness_function_body ~ "}" }
+fitness_function_body = { fitness_function_member* }
+fitness_function_member = _{
+    dimension_stmt
+  | aggregation_stmt
+  | description_stmt
+  | data_field
+}
+
+dimension_stmt   = { "dimension" ~ ident ~ "{" ~ dimension_body ~ "}" }
+dimension_body   = { dimension_member* }
+dimension_member = _{
+    weight_stmt
+  | metric_stmt
+}
+weight_stmt      = { "weight:" ~ number }
+metric_stmt      = { "metric:" ~ string_literal }
+aggregation_stmt = { "aggregation:" ~ ident }
+
+// 4. optimizer_def — search/optimization engine configuration
+optimizer_def  = { "optimizer" ~ ident ~ "{" ~ optimizer_body ~ "}" }
+optimizer_body = { optimizer_member* }
+optimizer_member = _{
+    engine_stmt
+  | iterations_stmt
+  | population_stmt
+  | mutation_stmt
+  | description_stmt
+  | data_field
+}
+
+engine_stmt     = { "engine:" ~ ident }
+iterations_stmt = { "iterations:" ~ number }
+population_stmt = { "population_size:" ~ number }
+mutation_stmt   = { "mutation_strategy:" ~ ident }
+
+// 5. benchmark_gate_def — pass/fail gate for a benchmark
+benchmark_gate_def  = { "benchmark_gate" ~ ident ~ "{" ~ benchmark_gate_body ~ "}" }
+benchmark_gate_body = { benchmark_gate_member* }
+benchmark_gate_member = _{
+    benchmark_stmt
+  | tolerance_stmt
+  | pass_criteria_stmt
+  | description_stmt
+  | data_field
+}
+
+benchmark_stmt     = { "benchmark:" ~ string_literal }
+tolerance_stmt     = { "tolerance:" ~ number }
+pass_criteria_stmt = { "pass_criteria:" ~ string_literal }
+
+// 6. evolution_run_def — a complete evolution experiment record
+evolution_run_def  = { "evolution_run" ~ ident ~ "{" ~ evolution_run_body ~ "}" }
+evolution_run_body = { evolution_run_member* }
+evolution_run_member = _{
+    target_ref_stmt
+  | optimizer_ref_stmt
+  | dataset_ref_stmt
+  | gate_ref_stmt
+  | status_stmt
+  | description_stmt
+  | data_field
+}
+
+target_ref_stmt    = { "target:" ~ ident }
+optimizer_ref_stmt = { "optimizer:" ~ ident }
+dataset_ref_stmt   = { "dataset:" ~ ident }
+gate_ref_stmt      = { "gate:" ~ ident }
+status_stmt        = { "status:" ~ ident }
+
+// 7. constraint_def — reusable named constraint
+constraint_def      = { "constraint" ~ ident ~ "{" ~ constraint_def_body ~ "}" }
+constraint_def_body = { constraint_def_member* }
+constraint_def_member = _{
+    type_stmt
+  | threshold_stmt
+  | enforcement_stmt
+  | description_stmt
+  | data_field
+}
+
+// ============================================================
+// AGENT SYSTEM
+// ============================================================
+
+// 1. agent_def — autonomous agent with persona, model, capabilities, learning
+agent_def  = { "agent" ~ ident ~ "{" ~ agent_body ~ "}" }
+agent_body = { agent_member* }
+agent_member = _{
+    persona_stmt
+  | model_ref_stmt
+  | capabilities_stmt
+  | learning_ref_stmt
+  | backends_stmt
+  | data_field
+  | description_stmt
+  | in_port
+  | out_port
+  | process_rule
+}
+
+persona_stmt      = { "persona:" ~ string_literal }
+model_ref_stmt    = { "model:" ~ ident }
+capabilities_stmt = { "capabilities:" ~ "[" ~ ident_list ~ "]" }
+learning_ref_stmt = { "learning:" ~ ident }
+backends_stmt     = { "backends:" ~ "[" ~ ident_list ~ "]" }
+
+// 2. platform_def — messaging platform endpoint (terminal, telegram, discord, etc.)
+platform_def  = { "platform" ~ ident ~ "{" ~ platform_body ~ "}" }
+platform_body = { platform_member* }
+platform_member = _{
+    type_stmt
+  | auth_stmt
+  | format_stmt
+  | endpoint_stmt
+  | data_field
+  | description_stmt
+}
+
+auth_stmt     = { "auth:" ~ string_literal }
+format_stmt   = { "format:" ~ ident }
+endpoint_stmt = { "endpoint:" ~ string_literal }
+
+// 3. gateway_def — unified messaging gateway binding agent to platforms
+gateway_def  = { "gateway" ~ ident ~ "{" ~ gateway_body ~ "}" }
+gateway_body = { gateway_member* }
+gateway_member = _{
+    agent_ref_stmt
+  | platforms_stmt
+  | routes_stmt
+  | data_field
+  | description_stmt
+  | in_port
+  | out_port
+  | process_rule
+}
+
+agent_ref_stmt  = { "agent:" ~ ident }
+platforms_stmt  = { "platforms:" ~ "[" ~ ident_list ~ "]" }
+routes_stmt     = { "routes:" ~ "[" ~ route_entry ~ ("," ~ route_entry)* ~ "]" }
+route_entry     = { ident ~ "->" ~ ident }
+
+// 4. execution_backend_def — runtime environment with resource limits
+execution_backend_def  = { "execution_backend" ~ ident ~ "{" ~ exec_backend_body ~ "}" }
+exec_backend_body      = { exec_backend_member* }
+exec_backend_member = _{
+    backend_type_stmt
+  | connection_stmt
+  | limits_stmt
+  | data_field
+  | description_stmt
+}
+
+backend_type_stmt = { "backend_type:" ~ ident }
+connection_stmt   = { "connection:" ~ string_literal }
+limits_stmt       = { "limits:" ~ "{" ~ limit_entry ~ ("," ~ limit_entry)* ~ "}" }
+limit_entry       = { ident ~ ":" ~ expression }
+
+// 5. skill_def — procedural knowledge unit with trigger and steps
+skill_def  = { "skill" ~ ident ~ "{" ~ skill_body ~ "}" }
+skill_body = { skill_member* }
+skill_member = _{
+    trigger_stmt
+  | steps_stmt
+  | status_stmt
+  | improvement_stmt
+  | data_field
+  | description_stmt
+}
+
+trigger_stmt     = { "trigger:" ~ string_literal }
+steps_stmt       = { "steps:" ~ "[" ~ string_list ~ "]" }
+improvement_stmt = { "improvement:" ~ "{" ~ meta_pair_list ~ "}" }
+
+// 6. learning_config_def — settings for skill generation and self-improvement
+learning_config_def  = { "learning_config" ~ ident ~ "{" ~ learning_body ~ "}" }
+learning_body        = { learning_member* }
+learning_member = _{
+    mode_stmt
+  | skill_gen_stmt
+  | memory_persist_stmt
+  | session_search_stmt
+  | self_improve_stmt
+  | data_field
+  | description_stmt
+}
+
+mode_stmt           = { "mode:" ~ ident }
+skill_gen_stmt      = { "skill_generation:" ~ expression }
+memory_persist_stmt = { "memory_persist:" ~ expression }
+session_search_stmt = { "session_search:" ~ expression }
+self_improve_stmt   = { "self_improve:" ~ expression }
+
+// 7. cron_task_def — scheduled automation with platform delivery
+cron_task_def  = { "cron_task" ~ ident ~ "{" ~ cron_body ~ "}" }
+cron_body      = { cron_member* }
+cron_member = _{
+    schedule_stmt
+  | agent_ref_stmt
+  | platform_delivery_stmt
+  | action_stmt
+  | data_field
+  | description_stmt
+}
+
+schedule_stmt           = { "schedule:" ~ string_literal }
+platform_delivery_stmt  = { "deliver_to:" ~ ident }
+
+// 8. model_config_def — LLM provider configuration with fallback chain
+model_config_def  = { "model_config" ~ ident ~ "{" ~ model_config_body ~ "}" }
+model_config_body = { model_config_member* }
+model_config_member = _{
+    provider_stmt
+  | model_id_stmt
+  | fallback_stmt
+  | params_stmt
+  | cost_limit_stmt
+  | data_field
+  | description_stmt
+}
+
+provider_stmt   = { "provider:" ~ ident }
+model_id_stmt   = { "model_id:" ~ string_literal }
+fallback_stmt   = { "fallback:" ~ ident }
+params_stmt     = { "params:" ~ "{" ~ meta_pair_list ~ "}" }
+cost_limit_stmt = { "cost_limit:" ~ expression }
+
+// ============================================================
+// VISUAL COMMUNICATION LAYER
+// ============================================================
+
+// 1. diagram_def — named visual artifact
+diagram_def  = { "diagram" ~ ident ~ "{" ~ diagram_body ~ "}" }
+diagram_body = { diagram_member* }
+diagram_member = _{
+    diagram_type_stmt
+  | source_stmt
+  | render_config_stmt
+  | description_stmt
+  | data_field
+}
+
+diagram_type_stmt  = { "type:" ~ ident }
+render_config_stmt = { "render:" ~ ident }
+
+// 2. preview_def — HTML component preview
+preview_def  = { "preview" ~ ident ~ "{" ~ preview_body ~ "}" }
+preview_body = { preview_member* }
+preview_member = _{
+    source_stmt
+  | viewport_stmt
+  | mode_stmt
+  | render_config_stmt
+  | description_stmt
+  | data_field
+}
+
+viewport_stmt = { "viewport:" ~ ident }
+
+// 3. annotation_def — markup layer on image
+annotation_def  = { "annotation" ~ ident ~ "{" ~ annotation_body ~ "}" }
+annotation_body = { annotation_member* }
+annotation_member = _{
+    target_ref_stmt
+  | element_stmt
+  | description_stmt
+  | data_field
+}
+
+element_stmt = { "element:" ~ ident ~ "(" ~ meta_pair_list ~ ")" }
+
+// 4. visual_review_def — review cycle
+visual_review_def  = { "visual_review" ~ ident ~ "{" ~ visual_review_body ~ "}" }
+visual_review_body = { visual_review_member* }
+visual_review_member = _{
+    target_ref_stmt
+  | render_config_stmt
+  | feedback_mode_stmt
+  | description_stmt
+  | data_field
+}
+
+feedback_mode_stmt = { "feedback_mode:" ~ ident }
+
+// 5. screenshot_def — captured image with metadata
+screenshot_def  = { "screenshot" ~ ident ~ "{" ~ screenshot_body ~ "}" }
+screenshot_body = { screenshot_member* }
+screenshot_member = _{
+    path_stmt
+  | source_stmt
+  | tags_stmt
+  | description_stmt
+  | data_field
+}
+
+tags_stmt = { "tags:" ~ "[" ~ ident_list ~ "]" }
+
+// 6. visual_search_def — semantic search query
+visual_search_def  = { "visual_search" ~ ident ~ "{" ~ visual_search_body ~ "}" }
+visual_search_body = { visual_search_member* }
+visual_search_member = _{
+    search_mode_stmt
+  | query_stmt
+  | tags_stmt
+  | max_results_stmt
+  | description_stmt
+  | data_field
+}
+
+search_mode_stmt = { "search_mode:" ~ ident }
+query_stmt       = { "query:" ~ string_literal }
+max_results_stmt = { "max_results:" ~ number }
+
+// 7. render_config_def — output configuration
+render_config_def  = { "render_config" ~ ident ~ "{" ~ render_config_body ~ "}" }
+render_config_body = { render_config_member* }
+render_config_member = _{
+    format_stmt
+  | width_stmt
+  | height_stmt
+  | theme_stmt
+  | scale_stmt
+  | description_stmt
+  | data_field
+}
+
+width_stmt  = { "width:" ~ number }
+height_stmt = { "height:" ~ number }
+theme_stmt  = { "theme:" ~ string_literal }
+scale_stmt  = { "scale:" ~ number }
 
 // ============================================================
 // TERMINALS

@@ -1,0 +1,165 @@
+// ARK Reflexive Agent Spec
+//
+// Models Ark's own .agent/ pipeline as an agent system.
+// The pipeline orchestrates planning, implementation, and review roles
+// using Claude models — described here using the same DSL it processes.
+//
+// This spec is reflexive: Ark describes itself.
+
+// ============================================================
+// 1. MODEL CONFIGS — opus for planning/reviewing, sonnet for impl
+// ============================================================
+
+model_config OpusConfig {
+    description: "Claude Opus — high-capability model for planning and review"
+    provider: anthropic
+    model_id: "claude-opus-4-5"
+    params: {
+        temperature: 0.3,
+        max_tokens: 8000
+    }
+    cost_limit: 0.50
+}
+
+model_config SonnetConfig {
+    description: "Claude Sonnet — faster throughput for implementation"
+    provider: anthropic
+    model_id: "claude-sonnet-4-6"
+    params: {
+        temperature: 0.2,
+        max_tokens: 8000
+    }
+    cost_limit: 0.15
+}
+
+// ============================================================
+// 2. PLATFORM — Terminal stdin/stdout interaction model
+// ============================================================
+
+platform Terminal {
+    description: "Local terminal — stdin/stdout interaction model for the pipeline"
+    type: terminal
+    auth: "none"
+    format: text
+    endpoint: "stdio"
+}
+
+// ============================================================
+// 3. EXECUTION BACKEND — Local Python/Rust environment
+// ============================================================
+
+execution_backend LocalEnv {
+    description: "Local process environment running Python tools and Rust binaries"
+    backend_type: local
+    connection: "localhost"
+    limits: {
+        cpu_cores: 4,
+        memory_mb: 4096,
+        timeout_sec: 1800
+    }
+}
+
+// ============================================================
+// 4. SKILLS — Planner, Implementer, Reviewer mapped as skills
+// ============================================================
+
+skill planner_skill {
+    description: "Triggered by 'plan' keyword — generates designs and task breakdowns from requirements"
+    trigger: "plan"
+    steps: [
+        "Read adventure goal and existing context",
+        "Decompose into atomic tasks with dependencies",
+        "Write design document to .agent/adventures/{id}/designs/",
+        "Create task files in .agent/adventures/{id}/tasks/",
+        "Set task stage to planning and status to ready"
+    ]
+    status: active
+    improvement: {
+        source: "adventure_outcomes",
+        frequency: "per_adventure"
+    }
+}
+
+skill implementer_skill {
+    description: "Triggered by task assignment — reads design, writes code, runs build and tests"
+    trigger: "implement"
+    steps: [
+        "Read task file and linked design document",
+        "Read config.md for build and test commands",
+        "Implement changes following the design",
+        "Run build command to verify compilation",
+        "Run test command to verify correctness",
+        "Set task status to done"
+    ]
+    status: active
+    improvement: {
+        source: "review_feedback",
+        frequency: "per_task"
+    }
+}
+
+skill reviewer_skill {
+    description: "Triggered by 'review' keyword — checks implementation quality against design"
+    trigger: "review"
+    steps: [
+        "Read task file and design document",
+        "Read all modified files listed in task frontmatter",
+        "Check adherence to design and acceptance criteria",
+        "Write review report to .agent/reports/{task-id}-review.md",
+        "Set task stage to fixing if issues found, else approved"
+    ]
+    status: active
+    improvement: {
+        source: "fix_iterations",
+        frequency: "per_task"
+    }
+}
+
+// ============================================================
+// 5. LEARNING CONFIG — Passive learning from adventure outcomes
+// ============================================================
+
+learning_config PipelineLearning {
+    description: "Passive learning mode: pipeline improves from adventure outcome metrics"
+    mode: passive
+    skill_generation: false
+    memory_persist: true
+    session_search: false
+    self_improve: false
+}
+
+// ============================================================
+// 6. AGENT — ark_pipeline orchestrator
+// ============================================================
+
+agent ark_pipeline {
+    description: "Reflexive agent: Ark's .agent/ CI-like pipeline orchestrating planner, implementer, and reviewer roles"
+    persona: "You are the Ark pipeline orchestrator — a CI/CD-like agent system that manages software development adventures. You decompose goals into tasks, assign them to specialist roles, coordinate their execution, and learn from outcomes to improve over time."
+    model: SonnetConfig
+    capabilities: [planner_skill, implementer_skill, reviewer_skill]
+    learning: PipelineLearning
+    backends: [LocalEnv]
+}
+
+// ============================================================
+// 7. GATEWAY — Routes Terminal messages to the pipeline
+// ============================================================
+
+gateway PipelineGateway {
+    description: "Routes messages from the Terminal platform to the ark_pipeline agent"
+    agent: ark_pipeline
+    platforms: [Terminal]
+    routes: [Terminal -> ark_pipeline]
+}
+
+// ============================================================
+// 8. CRON TASK — Daily metrics aggregation
+// ============================================================
+
+cron_task DailyMetrics {
+    description: "Aggregate adventure metrics daily: token costs, task durations, pass rates"
+    schedule: "0 0 * * *"
+    agent: ark_pipeline
+    deliver_to: Terminal
+    action: "Summarize completed adventure metrics from .agent/adventures/*/metrics.md and append to .agent/reports/daily-summary.md"
+}

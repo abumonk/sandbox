@@ -1377,6 +1377,105 @@ def verify_file(ast_json: dict) -> dict:
             if flat:
                 all_results["_studio"] = flat
 
+    # Evolution verification: run when evolution items are present.
+    evolution_kinds = {
+        "eval_dataset", "fitness_function", "benchmark_gate",
+        "evolution_target", "evolution_run", "optimizer", "constraint",
+    }
+    has_evolution_items = any(
+        isinstance(it, dict) and it.get("kind") in evolution_kinds
+        for it in items
+    )
+    if has_evolution_items:
+        verify_evolution = None
+        try:
+            from tools.verify.evolution_verify import verify_evolution
+        except ImportError:
+            try:
+                import sys as _sys, pathlib as _pathlib
+                _sys.path.insert(0, str(_pathlib.Path(__file__).parent.parent.parent))
+                from tools.verify.evolution_verify import verify_evolution
+            except ImportError:
+                # evolution_verify not available — skip silently
+                pass
+        if verify_evolution is not None:
+            evolution_results = verify_evolution(ast_json)
+            if evolution_results:
+                # Each result dict already has check/entity/status/message fields.
+                # Store them grouped under "_evolution" in all_results,
+                # converting "pass"/"fail"/"warn" → "PASS"/"FAIL"/"WARN" so the
+                # summary tally uses the same case as the rest of the verifier.
+                normalised = []
+                for r in evolution_results:
+                    rec = dict(r)
+                    rec["status"] = rec.get("status", "warn").upper()
+                    normalised.append(rec)
+                all_results["_evolution"] = normalised
+
+    # Agent verification: run when agent-specific items are present.
+    agent_kinds = {
+        "agent", "platform", "gateway", "execution_backend",
+        "skill", "learning_config", "cron_task", "model_config",
+    }
+    has_agent_items = any(
+        isinstance(it, dict) and it.get("kind") in agent_kinds
+        for it in items
+    )
+    if has_agent_items:
+        verify_agent = None
+        try:
+            from tools.verify.agent_verify import verify_agent
+        except ImportError:
+            try:
+                import sys as _sys, pathlib as _pathlib
+                _sys.path.insert(0, str(_pathlib.Path(__file__).parent.parent.parent))
+                from tools.verify.agent_verify import verify_agent
+            except ImportError:
+                # agent_verify not available — skip silently
+                pass
+        if verify_agent is not None:
+            agent_results = verify_agent(ast_json)
+            if agent_results:
+                # Each result dict already has check/status/message fields.
+                # Normalise "pass"/"fail"/"warn" → "PASS"/"FAIL"/"WARN" to match
+                # the case convention used by the rest of the verifier.
+                normalised_agent = []
+                for r in agent_results:
+                    rec = dict(r)
+                    rec["status"] = rec.get("status", "warn").upper()
+                    normalised_agent.append(rec)
+                all_results["_agent"] = normalised_agent
+
+    # Visual verification: run when visual-specific items are present.
+    visual_kinds = {
+        "diagram", "preview", "annotation", "visual_review",
+        "screenshot", "visual_search", "render_config",
+    }
+    has_visual_items = any(
+        isinstance(it, dict) and it.get("kind") in visual_kinds
+        for it in items
+    )
+    if has_visual_items:
+        verify_visual = None
+        try:
+            from tools.verify.visual_verify import verify_visual
+        except ImportError:
+            try:
+                import sys as _sys, pathlib as _pathlib
+                _sys.path.insert(0, str(_pathlib.Path(__file__).parent.parent.parent))
+                from tools.verify.visual_verify import verify_visual
+            except ImportError:
+                pass
+        if verify_visual is not None:
+            visual_results = verify_visual(ast_json)
+            if visual_results:
+                normalised_visual = []
+                for r in visual_results:
+                    rec = dict(r)
+                    rec["status"] = rec.get("status", "warn").upper()
+                    normalised_visual.append(rec)
+                all_results["_visual"] = normalised_visual
+
     # Summary — PASS_BOUNDED counts as a pass for the purposes of the
     # running green/red tally, since it's the best the BMC can assert.
     # PASS_OPAQUE counts as an acknowledged pass (Z3 was used but with

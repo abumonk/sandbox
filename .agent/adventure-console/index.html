@@ -1,0 +1,800 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Adventure Console</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+  :root {
+    --bg: #0f141a;
+    --bg-alt: #161d25;
+    --bg-hover: #1d2731;
+    --border: #2a343f;
+    --text: #dbe1e8;
+    --muted: #8a96a4;
+    --accent: #5ab0ff;
+    --accent-dim: #2d6ca8;
+    --ok: #5fd38a;
+    --warn: #f0b04a;
+    --err: #e66a6a;
+    --badge-bg: #243040;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 13px/1.45 "Segoe UI", Helvetica, Arial, sans-serif;
+    display: flex;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  h1, h2, h3, h4 { margin: 0 0 8px; font-weight: 600; }
+  pre, code {
+    font-family: "Cascadia Mono", "Consolas", monospace;
+    font-size: 12px;
+  }
+  pre {
+    background: var(--bg-alt); border: 1px solid var(--border);
+    padding: 10px; border-radius: 6px; overflow: auto;
+    max-height: 500px;
+  }
+  code { background: var(--bg-alt); padding: 1px 4px; border-radius: 3px; }
+  button {
+    background: var(--accent-dim); color: var(--text);
+    border: 1px solid var(--border); padding: 6px 12px;
+    border-radius: 4px; cursor: pointer; font-size: 12px;
+  }
+  button:hover { background: var(--accent); color: #0b0f13; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.secondary { background: var(--bg-alt); }
+  button.danger { background: #662a2a; }
+  button.danger:hover { background: var(--err); color: #0b0f13; }
+  input, select, textarea {
+    background: var(--bg-alt); color: var(--text);
+    border: 1px solid var(--border); border-radius: 4px;
+    padding: 4px 8px; font: inherit;
+  }
+  table { border-collapse: collapse; width: 100%; margin: 6px 0; font-size: 12px; }
+  th, td {
+    border: 1px solid var(--border); padding: 5px 8px;
+    text-align: left; vertical-align: top;
+  }
+  th { background: var(--bg-alt); font-weight: 600; }
+  tr:hover td { background: var(--bg-hover); }
+
+  /* Layout */
+  #sidebar {
+    width: 260px; min-width: 260px;
+    background: var(--bg-alt); border-right: 1px solid var(--border);
+    overflow-y: auto; padding: 10px;
+  }
+  #main { flex: 1; overflow: auto; padding: 16px; }
+
+  .logo {
+    font-size: 15px; font-weight: 700; letter-spacing: 0.5px;
+    padding: 4px 6px 12px; color: var(--accent);
+  }
+  .logo small { font-weight: 400; color: var(--muted); font-size: 11px; }
+
+  .adv-item {
+    display: block; padding: 8px 10px; margin-bottom: 4px;
+    border-radius: 4px; cursor: pointer;
+    border: 1px solid transparent;
+  }
+  .adv-item:hover { background: var(--bg-hover); }
+  .adv-item.active {
+    background: var(--bg-hover);
+    border-color: var(--accent-dim);
+  }
+  .adv-item .adv-id {
+    color: var(--muted); font-family: "Cascadia Mono", monospace;
+    font-size: 11px;
+  }
+  .adv-item .adv-title { display: block; font-weight: 500; margin-top: 2px; }
+
+  /* Badges */
+  .badge {
+    display: inline-block; padding: 2px 8px;
+    border-radius: 10px; background: var(--badge-bg);
+    font-size: 11px; font-weight: 500;
+    border: 1px solid var(--border);
+  }
+  .badge.state-concept     { color: var(--muted); }
+  .badge.state-planning    { color: var(--warn); border-color: var(--warn); }
+  .badge.state-review      { color: var(--accent); border-color: var(--accent); }
+  .badge.state-active      { color: var(--ok); border-color: var(--ok); }
+  .badge.state-blocked     { color: var(--err); border-color: var(--err); }
+  .badge.state-completed   { color: var(--ok); background: #1a3024; }
+  .badge.state-cancelled   { color: var(--muted); text-decoration: line-through; }
+  .badge.status-passed, .badge.status-PASSED { color: var(--ok); }
+  .badge.status-failed, .badge.status-FAILED { color: var(--err); }
+  .badge.status-pending, .badge.status-in_progress { color: var(--warn); }
+  .badge.status-done { color: var(--ok); }
+
+  /* Tabs */
+  .tabs {
+    display: flex; gap: 2px; border-bottom: 1px solid var(--border);
+    margin-bottom: 16px; flex-wrap: wrap;
+  }
+  .tab {
+    padding: 6px 14px; cursor: pointer; font-size: 12px;
+    border: 1px solid transparent; border-bottom: none;
+    border-radius: 4px 4px 0 0; color: var(--muted);
+  }
+  .tab:hover { color: var(--text); background: var(--bg-alt); }
+  .tab.active {
+    color: var(--accent); background: var(--bg-alt);
+    border-color: var(--border);
+    margin-bottom: -1px;
+  }
+
+  .tab-pane { display: none; }
+  .tab-pane.active { display: block; }
+
+  /* Header */
+  .adv-header {
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 8px; flex-wrap: wrap;
+  }
+  .adv-header h1 { margin: 0; font-size: 20px; }
+  .adv-header .adv-id {
+    font-family: "Cascadia Mono", monospace; color: var(--muted);
+    font-size: 13px;
+  }
+  .adv-meta {
+    font-size: 11px; color: var(--muted); margin-bottom: 14px;
+  }
+  .adv-meta span { margin-right: 14px; }
+
+  .btn-row { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 12px; }
+
+  /* Two-column file browser */
+  .split {
+    display: grid; grid-template-columns: 240px 1fr; gap: 10px;
+    min-height: 400px;
+  }
+  .split .file-list {
+    background: var(--bg-alt); border: 1px solid var(--border);
+    border-radius: 4px; padding: 6px; overflow-y: auto;
+    max-height: 70vh;
+  }
+  .file-list .file-entry {
+    padding: 4px 8px; cursor: pointer; border-radius: 3px;
+    font-family: "Cascadia Mono", monospace; font-size: 11px;
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 6px;
+  }
+  .file-list .file-entry:hover { background: var(--bg-hover); }
+  .file-list .file-entry.active { background: var(--accent-dim); color: #fff; }
+  .file-view {
+    background: var(--bg-alt); border: 1px solid var(--border);
+    border-radius: 4px; padding: 14px 18px; overflow: auto;
+    max-height: 70vh;
+  }
+  .file-view h1, .file-view h2, .file-view h3 { border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+  .file-view h1 { font-size: 18px; }
+  .file-view h2 { font-size: 16px; }
+  .file-view h3 { font-size: 14px; }
+  .file-view table { font-size: 11px; }
+  .file-view table th { background: var(--bg); }
+
+  /* Knowledge */
+  .kb-item {
+    background: var(--bg-alt); border: 1px solid var(--border);
+    border-radius: 4px; padding: 10px 14px; margin: 8px 0;
+    display: flex; gap: 12px; align-items: flex-start;
+  }
+  .kb-item input[type=checkbox] { margin-top: 4px; transform: scale(1.2); }
+  .kb-item .kb-body { flex: 1; }
+  .kb-item .kb-title { font-weight: 600; margin-bottom: 2px; }
+  .kb-item .kb-meta {
+    font-size: 11px; color: var(--muted);
+    font-family: "Cascadia Mono", monospace;
+  }
+  .kb-item .kb-content { margin-top: 6px; font-size: 12px; white-space: pre-wrap; }
+
+  /* Toast */
+  #toast {
+    position: fixed; bottom: 20px; right: 20px; z-index: 9999;
+    padding: 10px 16px; border-radius: 4px;
+    background: var(--accent-dim); color: #fff;
+    border: 1px solid var(--accent);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    display: none; max-width: 400px;
+  }
+  #toast.error { background: #602020; border-color: var(--err); }
+  #toast.ok { background: #1f4a32; border-color: var(--ok); }
+
+  .empty {
+    color: var(--muted); font-style: italic; padding: 30px 0;
+    text-align: center;
+  }
+
+  .concept-box {
+    background: var(--bg-alt); border-left: 3px solid var(--accent);
+    padding: 10px 14px; border-radius: 0 4px 4px 0;
+    margin: 10px 0; white-space: pre-wrap;
+    max-height: 260px; overflow-y: auto;
+  }
+
+  .log-tail {
+    background: #000; color: #bfcbd6;
+    padding: 10px; border-radius: 4px;
+    font-family: "Cascadia Mono", monospace; font-size: 11px;
+    max-height: 300px; overflow-y: auto; white-space: pre;
+    border: 1px solid var(--border);
+  }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <div class="logo">Adventure Console<br><small>Claudovka · team-pipeline</small></div>
+  <button class="secondary" style="width:100%; margin-bottom: 8px;" onclick="App.refreshList()">↻ Refresh</button>
+  <div id="adv-list"><div class="empty">Loading…</div></div>
+</div>
+
+<div id="main">
+  <div id="content"><div class="empty">Select an adventure from the sidebar.</div></div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ----------------------------------------------------------------------------
+//  Minimal client-side state / fetch helpers
+// ----------------------------------------------------------------------------
+const API = {
+  list:        () => fetch('/api/adventures').then(j),
+  get:         id => fetch('/api/adventures/' + id).then(j),
+  file:        p  => fetch('/api/file?path=' + encodeURIComponent(p)).then(r => r.ok ? r.text() : Promise.reject(r.statusText)),
+  setState:    (id, new_state) => post('/api/adventures/' + id + '/state', {new_state}),
+  approvePerm: id => post('/api/adventures/' + id + '/permissions/approve', {}),
+  approveDes:  (id, design) => post('/api/adventures/' + id + '/design/approve', {design}),
+  applyKB:     (id, indices) => post('/api/adventures/' + id + '/knowledge/apply', {indices}),
+  log:         (id, message) => post('/api/adventures/' + id + '/log', {message}),
+};
+function j(r) {
+  if (!r.ok) return r.json().then(e => Promise.reject(e.error || r.statusText));
+  return r.json();
+}
+function post(url, body) {
+  return fetch(url, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  }).then(j);
+}
+
+const $  = s => document.querySelector(s);
+const h  = (t, props = {}, children = []) => {
+  const el = document.createElement(t);
+  for (const k in props) {
+    if (k === 'class') el.className = props[k];
+    else if (k === 'onclick') el.onclick = props[k];
+    else if (k === 'html') el.innerHTML = props[k];
+    else el.setAttribute(k, props[k]);
+  }
+  (Array.isArray(children) ? children : [children]).forEach(c => {
+    if (c == null) return;
+    el.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+  });
+  return el;
+};
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+function toast(msg, kind) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.className = kind || '';
+  t.style.display = 'block';
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.style.display = 'none', 4000);
+}
+
+// ----------------------------------------------------------------------------
+//  State machine (adventure states)
+// ----------------------------------------------------------------------------
+const STATE_TRANSITIONS = {
+  concept:   ['planning', 'cancelled'],
+  planning:  ['review', 'concept', 'cancelled'],
+  review:    ['active', 'planning', 'cancelled'],
+  active:    ['blocked', 'completed', 'cancelled'],
+  blocked:   ['active', 'cancelled'],
+  completed: [],
+  cancelled: [],
+};
+
+// ----------------------------------------------------------------------------
+//  App object
+// ----------------------------------------------------------------------------
+const App = {
+  currentId: null,
+  currentAdv: null,
+  currentTab: 'overview',
+
+  async refreshList() {
+    const list = $('#adv-list');
+    list.innerHTML = '';
+    try {
+      const advs = await API.list();
+      advs.reverse();  // newest on top
+      for (const a of advs) {
+        const item = h('div', {class: 'adv-item' + (a.id === this.currentId ? ' active' : '')}, [
+          h('span', {class: 'adv-id'}, a.id),
+          ' ',
+          h('span', {class: 'badge state-' + a.state}, a.state),
+          h('span', {class: 'adv-title'}, a.title || '(untitled)'),
+        ]);
+        item.onclick = () => this.open(a.id);
+        list.appendChild(item);
+      }
+      if (advs.length === 0) list.innerHTML = '<div class="empty">No adventures yet.</div>';
+    } catch (e) {
+      list.innerHTML = '<div class="empty" style="color:var(--err);">Error: ' + esc(e) + '</div>';
+    }
+  },
+
+  async open(id) {
+    this.currentId = id;
+    this.currentTab = 'overview';
+    document.querySelectorAll('.adv-item').forEach(el => {
+      el.classList.toggle('active', el.querySelector('.adv-id')?.textContent === id);
+    });
+    $('#content').innerHTML = '<div class="empty">Loading ' + esc(id) + '…</div>';
+    try {
+      this.currentAdv = await API.get(id);
+      this.render();
+    } catch (e) {
+      $('#content').innerHTML = '<div class="empty" style="color:var(--err);">Error: ' + esc(e) + '</div>';
+    }
+  },
+
+  async reopen() {
+    if (this.currentId) await this.open(this.currentId);
+  },
+
+  render() {
+    const a = this.currentAdv;
+    if (!a) return;
+
+    const content = $('#content');
+    content.innerHTML = '';
+
+    // Header
+    const header = h('div', {class: 'adv-header'}, [
+      h('span', {class: 'adv-id'}, a.id),
+      h('h1', {}, a.title),
+      h('span', {class: 'badge state-' + a.state}, a.state),
+    ]);
+    content.appendChild(header);
+
+    content.appendChild(h('div', {class: 'adv-meta'}, [
+      h('span', {}, 'Created: ' + a.created),
+      h('span', {}, 'Updated: ' + a.updated),
+      h('span', {}, 'Tasks: ' + (a.tasks ? a.tasks.length : 0)),
+    ]));
+
+    // State transition buttons
+    const transitions = STATE_TRANSITIONS[a.state] || [];
+    if (transitions.length) {
+      const btns = h('div', {class: 'btn-row'}, [
+        h('span', {style: 'align-self:center;color:var(--muted);margin-right:4px;'}, 'Transition →'),
+        ...transitions.map(s => {
+          const b = h('button', {class: s === 'cancelled' ? 'danger' : ''}, s);
+          b.onclick = () => this.transitionState(s);
+          return b;
+        }),
+      ]);
+      content.appendChild(btns);
+    }
+
+    // Tabs
+    const tabs = [
+      ['overview',    'Overview'],
+      ['designs',     'Designs'      + count(a.designs)],
+      ['plans',       'Plans'        + count(a.plans)],
+      ['tasks',       'Tasks'        + count(a.tasks)],
+      ['permissions', 'Permissions'],
+      ['reviews',     'Reviews'      + count(a.reviews)],
+      ['knowledge',   'Knowledge'],
+      ['research',    'Research'     + count(a.research)],
+      ['log',         'Log'],
+    ];
+    const tabBar = h('div', {class: 'tabs'});
+    for (const [key, label] of tabs) {
+      const t = h('div', {class: 'tab' + (key === this.currentTab ? ' active' : '')}, label);
+      t.onclick = () => this.switchTab(key);
+      tabBar.appendChild(t);
+    }
+    content.appendChild(tabBar);
+
+    // Pane container
+    const pane = h('div', {id: 'pane'});
+    content.appendChild(pane);
+    this.renderTab();
+  },
+
+  switchTab(key) {
+    this.currentTab = key;
+    document.querySelectorAll('.tab').forEach((el, idx) => {
+      el.classList.toggle('active', el.textContent.toLowerCase().startsWith(key.slice(0,4)));
+    });
+    this.renderTab();
+  },
+
+  renderTab() {
+    const pane = $('#pane');
+    if (!pane) return;
+    pane.innerHTML = '';
+    const a = this.currentAdv;
+    const tab = this.currentTab;
+
+    if (tab === 'overview')    return pane.appendChild(this.renderOverview(a));
+    if (tab === 'designs')     return this.renderFileBrowser(pane, a.designs, `adventures/${a.id}/designs`, 'design');
+    if (tab === 'plans')       return this.renderFileBrowser(pane, a.plans, `adventures/${a.id}/plans`);
+    if (tab === 'tasks')       return pane.appendChild(this.renderTasks(a));
+    if (tab === 'permissions') return pane.appendChild(this.renderPermissions(a));
+    if (tab === 'reviews')     return pane.appendChild(this.renderReviews(a));
+    if (tab === 'knowledge')   return this.renderKnowledge(pane, a);
+    if (tab === 'research')    return this.renderFileBrowser(pane, a.research, `adventures/${a.id}/research`);
+    if (tab === 'log')         return pane.appendChild(this.renderLog(a));
+  },
+
+  // ----- Overview -------------------------------------------------------
+  renderOverview(a) {
+    const box = h('div');
+    box.appendChild(h('h3', {}, 'Concept'));
+    box.appendChild(h('div', {class: 'concept-box'}, a.concept || '(no concept recorded)'));
+
+    box.appendChild(h('h3', {style: 'margin-top:18px;'}, `Target Conditions (${a.target_conditions.length})`));
+    if (a.target_conditions.length === 0) {
+      box.appendChild(h('div', {class: 'empty'}, 'No target conditions defined.'));
+    } else {
+      const tbl = h('table');
+      tbl.innerHTML =
+        '<thead><tr><th>ID</th><th>Description</th><th>Task(s)</th><th>Proof</th><th>Status</th></tr></thead>';
+      const tb = h('tbody');
+      for (const tc of a.target_conditions) {
+        tb.appendChild(h('tr', {}, [
+          h('td', {}, h('code', {}, tc.id)),
+          h('td', {}, tc.description),
+          h('td', {}, tc.tasks),
+          h('td', {}, h('code', {html: esc(tc.proof_command)})),
+          h('td', {}, h('span', {class: 'badge status-' + tc.status}, tc.status || '—')),
+        ]));
+      }
+      tbl.appendChild(tb);
+      box.appendChild(tbl);
+    }
+
+    if (a.adventure_report) {
+      box.appendChild(h('h3', {style: 'margin-top:18px;'}, 'Adventure Report'));
+      const btn = h('button', {}, 'Open report-adventure synthesis');
+      btn.onclick = () => this.currentTab = 'reviews' && this.switchTab('reviews');
+      box.appendChild(btn);
+    }
+
+    return box;
+  },
+
+  // ----- Tasks ----------------------------------------------------------
+  renderTasks(a) {
+    const box = h('div');
+    if (!a.tasks.length) return h('div', {class: 'empty'}, 'No tasks.');
+    const tbl = h('table');
+    tbl.innerHTML = '<thead><tr><th>ID</th><th>Title</th><th>Stage</th><th>Status</th><th>Assignee</th><th>Iter</th><th>TCs</th></tr></thead>';
+    const tb = h('tbody');
+    for (const t of a.tasks) {
+      const row = h('tr', {}, [
+        h('td', {}, h('code', {}, t.id)),
+        h('td', {}, t.title),
+        h('td', {}, h('span', {class: 'badge status-' + t.stage}, t.stage)),
+        h('td', {}, h('span', {class: 'badge status-' + t.status}, t.status)),
+        h('td', {}, t.assignee),
+        h('td', {}, String(t.iterations)),
+        h('td', {}, (t.target_conditions || []).join(', ')),
+      ]);
+      row.style.cursor = 'pointer';
+      row.onclick = () => this.openTaskDetail(t);
+      tb.appendChild(row);
+    }
+    tbl.appendChild(tb);
+    box.appendChild(tbl);
+    const detail = h('div', {id: 'task-detail'});
+    box.appendChild(detail);
+    return box;
+  },
+
+  async openTaskDetail(t) {
+    const detail = $('#task-detail');
+    if (!detail) return;
+    detail.innerHTML = '<div class="empty">Loading ' + esc(t.id) + '…</div>';
+    try {
+      const txt = await API.file(t.file);
+      detail.innerHTML = '';
+      const view = h('div', {class: 'file-view', style: 'margin-top:14px;'});
+      view.innerHTML = marked.parse(txt);
+      detail.appendChild(h('h3', {style: 'margin-top:18px;'}, 'Task: ' + t.id));
+      detail.appendChild(view);
+    } catch (e) {
+      detail.innerHTML = '<div class="empty" style="color:var(--err);">Error: ' + esc(e) + '</div>';
+    }
+  },
+
+  // ----- File browsers (designs / plans / research) --------------------
+  renderFileBrowser(pane, files, dirRel, kind) {
+    if (!files || !files.length) {
+      pane.appendChild(h('div', {class: 'empty'}, 'No files.'));
+      return;
+    }
+    const split = h('div', {class: 'split'});
+    const list  = h('div', {class: 'file-list'});
+    const view  = h('div', {class: 'file-view'}, h('div', {class: 'empty'}, 'Select a file.'));
+    split.appendChild(list);
+    split.appendChild(view);
+    pane.appendChild(split);
+
+    const approved = new Set();  // track approved designs visually (best effort)
+
+    for (const f of files) {
+      const name = f.replace(/\.md$/, '');
+      const row = h('div', {class: 'file-entry'});
+      row.appendChild(h('span', {}, name));
+      if (kind === 'design') {
+        const btn = h('button', {class: 'secondary', style: 'padding:2px 8px;font-size:10px;'}, 'Approve');
+        btn.onclick = async (ev) => {
+          ev.stopPropagation();
+          try {
+            const r = await API.approveDes(this.currentAdv.id, f);
+            toast('Design approved: ' + f, 'ok');
+            approved.add(f);
+            btn.textContent = '✓';
+            btn.disabled = true;
+            this.reopen();
+          } catch (e) { toast('Error: ' + e, 'error'); }
+        };
+        row.appendChild(btn);
+      }
+      row.onclick = async () => {
+        document.querySelectorAll('.file-entry').forEach(el => el.classList.remove('active'));
+        row.classList.add('active');
+        view.innerHTML = '<div class="empty">Loading…</div>';
+        try {
+          const txt = await API.file(`.agent/${dirRel}/${f}`);
+          view.innerHTML = marked.parse(txt);
+        } catch (e) {
+          view.innerHTML = '<div class="empty" style="color:var(--err);">Error: ' + esc(e) + '</div>';
+        }
+      };
+      list.appendChild(row);
+    }
+    // auto-select first
+    list.firstChild?.click();
+  },
+
+  // ----- Permissions ----------------------------------------------------
+  renderPermissions(a) {
+    const box = h('div');
+    if (!a.permissions) {
+      box.appendChild(h('div', {class: 'empty'}, 'No permissions.md file for this adventure.'));
+      return box;
+    }
+    const p = a.permissions;
+    box.appendChild(h('div', {style: 'margin-bottom:12px;'}, [
+      h('strong', {}, 'Status: '),
+      h('span', {class: 'badge status-' + p.status}, p.status),
+      p.approved ? h('span', {style: 'margin-left:12px;color:var(--muted);'}, 'approved: ' + p.approved) : '',
+    ]));
+    if (p.status !== 'approved') {
+      const btn = h('button', {}, 'Approve Permissions');
+      btn.onclick = async () => {
+        if (!confirm('Approve permissions for ' + a.id + '?')) return;
+        try {
+          await API.approvePerm(a.id);
+          toast('Permissions approved', 'ok');
+          this.reopen();
+        } catch (e) { toast('Error: ' + e, 'error'); }
+      };
+      box.appendChild(btn);
+    }
+    const view = h('div', {class: 'file-view', style: 'margin-top:14px;'});
+    view.innerHTML = '<div class="empty">Loading…</div>';
+    box.appendChild(view);
+    API.file(p.file).then(txt => view.innerHTML = marked.parse(txt))
+                    .catch(e => view.innerHTML = '<div class="empty" style="color:var(--err);">' + esc(e) + '</div>');
+    return box;
+  },
+
+  // ----- Reviews --------------------------------------------------------
+  renderReviews(a) {
+    const box = h('div');
+    const split = h('div', {class: 'split'});
+    const list  = h('div', {class: 'file-list'});
+    const view  = h('div', {class: 'file-view'}, h('div', {class: 'empty'}, 'Select a review.'));
+
+    if (a.adventure_report) {
+      const row = h('div', {class: 'file-entry', style: 'font-weight:600;color:var(--accent);'}, '★ adventure-report.md');
+      row.onclick = async () => {
+        document.querySelectorAll('.file-entry').forEach(el => el.classList.remove('active'));
+        row.classList.add('active');
+        view.innerHTML = '<div class="empty">Loading…</div>';
+        try {
+          const txt = await API.file(a.adventure_report.file);
+          view.innerHTML = marked.parse(txt);
+        } catch (e) {
+          view.innerHTML = '<div class="empty" style="color:var(--err);">' + esc(e) + '</div>';
+        }
+      };
+      list.appendChild(row);
+    }
+
+    if (!a.reviews.length && !a.adventure_report) {
+      box.appendChild(h('div', {class: 'empty'}, 'No reviews yet. Run `/adventure-review ' + a.id + '`.'));
+      return box;
+    }
+
+    for (const r of a.reviews) {
+      if (r.file === 'adventure-report.md') continue;
+      const row = h('div', {class: 'file-entry'}, [
+        h('span', {}, r.task_id),
+        h('span', {class: 'badge status-' + r.status}, r.status || '?'),
+      ]);
+      row.onclick = async () => {
+        document.querySelectorAll('.file-entry').forEach(el => el.classList.remove('active'));
+        row.classList.add('active');
+        view.innerHTML = '<div class="empty">Loading…</div>';
+        try {
+          const txt = await API.file(`.agent/adventures/${a.id}/reviews/${r.file}`);
+          view.innerHTML = marked.parse(txt);
+        } catch (e) {
+          view.innerHTML = '<div class="empty" style="color:var(--err);">' + esc(e) + '</div>';
+        }
+      };
+      list.appendChild(row);
+    }
+
+    split.appendChild(list);
+    split.appendChild(view);
+    box.appendChild(split);
+    list.firstChild?.click();
+    return box;
+  },
+
+  // ----- Knowledge ------------------------------------------------------
+  async renderKnowledge(pane, a) {
+    if (!a.adventure_report) {
+      pane.appendChild(h('div', {class: 'empty'}, 'No adventure-report.md — run /adventure-review first.'));
+      return;
+    }
+    pane.innerHTML = '<div class="empty">Loading suggestions…</div>';
+    try {
+      const txt = await API.file(a.adventure_report.file);
+      const suggestions = parseKnowledgeSuggestions(txt);
+      pane.innerHTML = '';
+      if (!suggestions.length) {
+        pane.appendChild(h('div', {class: 'empty'}, 'No "### Suggestion" blocks in Section 6.'));
+        return;
+      }
+      pane.appendChild(h('h3', {}, `Knowledge Extraction — ${suggestions.length} suggestion(s)`));
+      pane.appendChild(h('div', {class: 'adv-meta'}, 'Check items to record a selection; use the button below to export. ' +
+        'Claude applies via /adventure-review → knowledge-extractor.'));
+
+      const form = h('div');
+      const checkboxes = [];
+      for (const s of suggestions) {
+        const cb = h('input', {type: 'checkbox'});
+        cb.checked = true;
+        checkboxes.push({cb, index: s.index, type: s.type});
+        form.appendChild(h('div', {class: 'kb-item'}, [
+          cb,
+          h('div', {class: 'kb-body'}, [
+            h('div', {class: 'kb-title'}, `[${s.index}] ${s.title}`),
+            h('div', {class: 'kb-meta'}, `${s.type} → ${s.target || '(no target file)'}`),
+            h('div', {class: 'kb-content'}, s.body),
+          ]),
+        ]));
+      }
+      pane.appendChild(form);
+
+      const btnRow = h('div', {class: 'btn-row'});
+      const applyBtn = h('button', {}, '✓ Record Selection');
+      applyBtn.onclick = async () => {
+        const picked = checkboxes.filter(c => c.cb.checked).map(c => c.index);
+        if (!picked.length) { toast('Select at least one'); return; }
+        try {
+          const r = await API.applyKB(a.id, picked);
+          toast('Recorded selection: ' + picked.join(', ') + ' → ' + (r.file || 'knowledge-selection.json'), 'ok');
+        } catch (e) { toast('Error: ' + e, 'error'); }
+      };
+      btnRow.appendChild(applyBtn);
+      const allBtn = h('button', {class: 'secondary'}, 'Select All');
+      allBtn.onclick = () => checkboxes.forEach(c => c.cb.checked = true);
+      btnRow.appendChild(allBtn);
+      const noneBtn = h('button', {class: 'secondary'}, 'None');
+      noneBtn.onclick = () => checkboxes.forEach(c => c.cb.checked = false);
+      btnRow.appendChild(noneBtn);
+      pane.appendChild(btnRow);
+    } catch (e) {
+      pane.innerHTML = '<div class="empty" style="color:var(--err);">' + esc(e) + '</div>';
+    }
+  },
+
+  // ----- Log tail -------------------------------------------------------
+  renderLog(a) {
+    const box = h('div');
+    box.appendChild(h('h3', {}, 'Adventure Log (tail)'));
+    box.appendChild(h('div', {class: 'log-tail'}, (a.log_tail || []).join('\n') || '(empty)'));
+    return box;
+  },
+
+  // ----- State transition ----------------------------------------------
+  async transitionState(newState) {
+    const a = this.currentAdv;
+    if (!confirm(`Transition ${a.id}: ${a.state} → ${newState}?`)) return;
+    try {
+      await API.setState(a.id, newState);
+      toast(`State → ${newState}`, 'ok');
+      await this.refreshList();
+      await this.reopen();
+    } catch (e) { toast('Error: ' + e, 'error'); }
+  },
+};
+
+function count(arr) {
+  return arr && arr.length ? ` (${arr.length})` : '';
+}
+
+// ----------------------------------------------------------------------------
+//  Knowledge-suggestion parser
+//    Section 6 format (from adventure-reviewer agent):
+//      ## 6. Knowledge Extraction Suggestions
+//      ...
+//      ### Suggestion 1 — Pattern — Title  (→ patterns.md)
+//      body...
+// ----------------------------------------------------------------------------
+function parseKnowledgeSuggestions(md) {
+  const lines = md.split('\n');
+  let inSection = false;
+  let cur = null;
+  const out = [];
+  const re = /^###\s+(?:Suggestion\s+)?(\d+)\s*[—\-:]\s*([A-Za-z]+)\s*[—\-:]\s*(.+?)(?:\s*\(→\s*(.+?)\))?\s*$/;
+
+  for (const raw of lines) {
+    const line = raw;
+    if (/^##\s+6\./i.test(line) || /^##\s+Knowledge\s+Extraction/i.test(line)) {
+      inSection = true; continue;
+    }
+    if (inSection && /^##\s/.test(line) && !/^##\s+6\./i.test(line)) {
+      if (cur) { out.push(cur); cur = null; }
+      inSection = false; break;
+    }
+    if (!inSection) continue;
+
+    const m = line.match(re);
+    if (m) {
+      if (cur) out.push(cur);
+      cur = {
+        index: parseInt(m[1], 10),
+        type: m[2].trim(),
+        title: m[3].trim(),
+        target: (m[4] || '').trim(),
+        body: '',
+      };
+    } else if (cur) {
+      cur.body += line + '\n';
+    }
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
+// Kick off
+App.refreshList();
+</script>
+</body>
+</html>

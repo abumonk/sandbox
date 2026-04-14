@@ -849,12 +849,28 @@ def gen_rust_predicate(item: dict) -> str:
 def codegen_file(ast_json: dict, target: str = "rust", out_dir: Path = None) -> dict:
     """Generate code for all entities in an ARK file.
 
-    Supported targets: rust, cpp, proto, studio.
+    Supported targets: rust, cpp, proto, studio, evolution, visual.
     For ``studio`` the call is delegated to studio_codegen.gen_studio which
     works on the *parsed* ArkFile object, not the JSON AST.  To keep the
     existing caller interface intact we re-parse the source when the target
     is ``studio`` and the caller passes a raw JSON dict.
     """
+    # ------------------------------------------------------------------ visual
+    if target == "visual":
+        try:
+            from visual_codegen import generate as _visual_generate
+        except ImportError:
+            from tools.codegen.visual_codegen import generate as _visual_generate
+        return _visual_generate(ast_json, out_dir)
+
+    # --------------------------------------------------------------- evolution
+    if target == "evolution":
+        try:
+            from evolution_codegen import generate as _evo_generate
+        except ImportError:
+            from tools.codegen.evolution_codegen import generate as _evo_generate
+        return _evo_generate(ast_json, out_dir)
+
     # ------------------------------------------------------------------ studio
     if target == "studio":
         # studio_codegen operates on the ArkFile dataclass, not on JSON.
@@ -969,7 +985,7 @@ def main():
     import argparse
     parser = argparse.ArgumentParser(description="ARK Codegen")
     parser.add_argument("input", help=".ark or .json file")
-    parser.add_argument("--target", choices=["rust", "cpp", "proto"], default="rust")
+    parser.add_argument("--target", choices=["rust", "cpp", "proto", "studio", "evolution", "visual"], default="rust")
     parser.add_argument("--out", help="Output directory", default=None)
     parser.add_argument("--stdout", action="store_true", help="Print to stdout")
     args = parser.parse_args()

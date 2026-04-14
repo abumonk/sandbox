@@ -1,0 +1,109 @@
+// ARK Reflexive Evolution — Role Descriptions
+//
+// Defines the evolution pipeline for Ark's own agent role descriptions.
+// Targets .agent/roles/ content and uses all 7 evolution item types to
+// validate the full GEPA-style optimization pipeline end-to-end.
+
+import stdlib.evolution
+
+// ============================================================
+// 1. EVOLUTION TARGET
+// ============================================================
+
+evolution_target RoleEvolution {
+    tier: skill
+    file_ref: ".agent/roles/"
+    constraints {
+        name: "size_limit"
+        type: size_limit
+        threshold: 0.2
+        enforcement: block
+        name: "semantic_preservation"
+        type: semantic_preservation
+        threshold: 0.8
+        enforcement: block
+    }
+}
+
+// ============================================================
+// 2. EVAL DATASET
+// ============================================================
+
+eval_dataset RoleEvalData {
+    source: "synthetic"
+    split: {
+        train: 0.6,
+        val: 0.2,
+        test: 0.2
+    }
+    scoring_rubric: "RoleFitness"
+}
+
+// ============================================================
+// 3. FITNESS FUNCTION
+// ============================================================
+
+fitness_function RoleFitness {
+    dimension clarity {
+        weight: 0.3
+        metric: "How clearly the role description communicates the agent's purpose and scope"
+    }
+    dimension completeness {
+        weight: 0.4
+        metric: "Whether the role covers all required fields: responsibility, skills, tools, escalation"
+    }
+    dimension actionability {
+        weight: 0.3
+        metric: "How actionable and unambiguous the role instructions are for the agent"
+    }
+    aggregation: weighted_sum
+}
+
+// ============================================================
+// 4. OPTIMIZER
+// ============================================================
+
+optimizer RoleOptimizer {
+    engine: gepa
+    iterations: 3
+    population_size: 3
+    mutation_strategy: reflective
+}
+
+// ============================================================
+// 5. BENCHMARK GATE
+// ============================================================
+
+benchmark_gate RoleGate {
+    benchmark: "role_quality"
+    tolerance: 0.05
+    pass_criteria: "fitness >= 0.65"
+}
+
+// ============================================================
+// 6 & 7. CONSTRAINTS (reusable named definitions)
+// ============================================================
+
+constraint RoleSizeLimit {
+    type: size_limit
+    threshold: 0.2
+    enforcement: block
+}
+
+constraint RoleSemanticPreservation {
+    type: semantic_preservation
+    threshold: 0.8
+    enforcement: block
+}
+
+// ============================================================
+// 8. EVOLUTION RUN
+// ============================================================
+
+evolution_run RoleEvolutionRun {
+    target: RoleEvolution
+    optimizer: RoleOptimizer
+    dataset: RoleEvalData
+    gate: RoleGate
+    status: pending
+}

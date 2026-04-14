@@ -1,0 +1,194 @@
+// agent_system.ark — Exemplar autonomous agent spec.
+//
+// Exercises all 8 agent item types:
+//   1. platform_def       (terminal, telegram)
+//   2. gateway_def        (agent_gateway)
+//   3. execution_backend_def (local_backend, docker_backend)
+//   4. model_config_def   (primary_model)
+//   5. skill_def          (search_skill, code_gen_skill, summarize_skill)
+//   6. learning_config_def (active_learning)
+//   7. cron_task_def      (daily_report, weekly_cleanup)
+//   8. agent_def          (autonomous_agent)
+//
+// Parse: python ark.py parse specs/infra/agent_system.ark
+
+// ============================================================
+// 1. PLATFORMS — messaging endpoints
+// ============================================================
+
+platform terminal {
+    type: terminal
+    format: text
+    description: "Local terminal stdin/stdout interface"
+}
+
+platform telegram {
+    type: telegram
+    auth: "env:TELEGRAM_BOT_TOKEN"
+    format: markdown
+    endpoint: "https://api.telegram.org/bot"
+    description: "Telegram Bot API messaging platform"
+}
+
+// ============================================================
+// 2. GATEWAY — binds agent to platforms with routing rules
+// ============================================================
+
+gateway agent_gateway {
+    agent: autonomous_agent
+    platforms: [terminal, telegram]
+    routes: [terminal -> autonomous_agent, telegram -> autonomous_agent]
+    description: "Unified gateway routing messages from all platforms to the agent"
+}
+
+// ============================================================
+// 3. EXECUTION BACKENDS — runtime environments
+// ============================================================
+
+execution_backend local_backend {
+    backend_type: local
+    connection: "unix:///var/run/ark/agent.sock"
+    limits: {
+        cpu: 4,
+        memory: 2048,
+        timeout: 300
+    }
+    description: "Local process execution backend for development"
+}
+
+execution_backend docker_backend {
+    backend_type: docker
+    connection: "unix:///var/run/docker.sock"
+    limits: {
+        cpu: 8,
+        memory: 8192,
+        timeout: 600
+    }
+    description: "Docker container execution backend for production isolation"
+}
+
+// ============================================================
+// 4. MODEL CONFIG — LLM provider configuration with fallback
+// ============================================================
+
+model_config primary_model {
+    provider: anthropic
+    model_id: "claude-sonnet-4-6"
+    fallback: fallback_model
+    params: {
+        temperature: 0.2,
+        max_tokens: 8192
+    }
+    cost_limit: 10
+    description: "Primary Claude Sonnet model config with Haiku fallback"
+}
+
+model_config fallback_model {
+    provider: anthropic
+    model_id: "claude-haiku-3-5"
+    params: {
+        temperature: 0.1,
+        max_tokens: 4096
+    }
+    cost_limit: 2
+    description: "Fallback Haiku model for cost-constrained tasks"
+}
+
+// ============================================================
+// 5. SKILLS — procedural knowledge units
+// ============================================================
+
+skill search_skill {
+    trigger: "search|find|lookup|query"
+    steps: [
+        "Parse the user query and extract key terms",
+        "Execute web or codebase search with extracted terms",
+        "Rank results by relevance score",
+        "Return top results with source citations"
+    ]
+    status: active
+    improvement: {
+        strategy: feedback_loop,
+        threshold: 0.8
+    }
+    description: "Web and codebase search skill with relevance ranking"
+}
+
+skill code_gen_skill {
+    trigger: "generate|write|create|implement"
+    steps: [
+        "Understand the task requirements from context",
+        "Select appropriate language and framework",
+        "Generate code with inline documentation",
+        "Validate syntax and run static analysis",
+        "Return code with usage examples"
+    ]
+    status: active
+    improvement: {
+        strategy: reinforcement,
+        threshold: 0.85
+    }
+    description: "Code generation skill supporting multiple languages and frameworks"
+}
+
+skill summarize_skill {
+    trigger: "summarize|tldr|brief|overview"
+    steps: [
+        "Extract key points from the input text",
+        "Identify entities, actions, and outcomes",
+        "Compose a concise structured summary",
+        "Return summary with configurable length"
+    ]
+    status: active
+    improvement: {
+        strategy: feedback_loop,
+        threshold: 0.75
+    }
+    description: "Text summarization skill with configurable output length"
+}
+
+// ============================================================
+// 6. LEARNING CONFIG — self-improvement settings
+// ============================================================
+
+learning_config active_learning {
+    mode: active
+    skill_generation: true
+    memory_persist: true
+    session_search: true
+    self_improve: true
+    description: "Active learning config: generates skills, persists memory, self-improves"
+}
+
+// ============================================================
+// 7. CRON TASKS — scheduled automation
+// ============================================================
+
+cron_task daily_report {
+    schedule: "0 8 * * *"
+    agent: autonomous_agent
+    deliver_to: telegram
+    action: "Generate a daily activity summary and deliver it to Telegram"
+    description: "Daily 08:00 UTC summary report delivered via Telegram"
+}
+
+cron_task weekly_cleanup {
+    schedule: "0 2 * * 0"
+    agent: autonomous_agent
+    deliver_to: terminal
+    action: "Purge stale session logs, rotate memory, and compact skill store"
+    description: "Weekly Sunday 02:00 UTC cleanup of logs and memory store"
+}
+
+// ============================================================
+// 8. AGENT — ties all components together
+// ============================================================
+
+agent autonomous_agent {
+    persona: "A self-improving autonomous agent that can search, generate code, and summarize content across terminal and Telegram platforms"
+    model: primary_model
+    capabilities: [search_skill, code_gen_skill, summarize_skill]
+    learning: active_learning
+    backends: [local_backend, docker_backend]
+    description: "Autonomous multi-platform agent with active learning and scheduled tasks"
+}

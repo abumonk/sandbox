@@ -1,0 +1,139 @@
+// visual_island.ark — Visual Communication Island Spec
+//
+// Ark describes its own visual communication and human-in-the-loop review
+// subsystem using the same DSL it processes. This spec is reflexive:
+// the visual pipeline is defined using visual items.
+//
+// Exercises all 7 visual item types:
+//   1. diagram_def          (architecture + sequence)
+//   2. preview_def          (HTML component)
+//   3. annotation_def       (markup on screenshot)
+//   4. visual_review_def    (review cycle targeting a diagram)
+//   5. screenshot_def       (captured image)
+//   6. visual_search_def    (keyword search)
+//   7. render_config_def    (svg default + png high-res)
+//
+// Parse:        python ark.py parse specs/infra/visual_island.ark
+// Verify:       python ark.py visual verify specs/infra/visual_island.ark
+
+import stdlib.types
+import stdlib.visual
+
+// ============================================================
+// 1. RENDER CONFIGS — output format settings
+// ============================================================
+
+render_config SvgDefault {
+    format: svg
+    width: 1200
+    height: 800
+    theme: "default"
+    scale: 1
+    description: "Default SVG render config — 1200x800, standard theme"
+}
+
+render_config PngHighRes {
+    format: png
+    width: 2400
+    height: 1600
+    theme: "dark"
+    scale: 2
+    description: "High-resolution PNG render config — 2400x1600 at 2x scale, dark theme"
+}
+
+// ============================================================
+// 2. DIAGRAMS — named visual artifacts
+// ============================================================
+
+diagram VisualArchitectureDiagram {
+    type: mermaid
+    source: "graph TD\n    Spec[.ark spec] --> Parser[Parser]\n    Parser --> AST[AST]\n    AST --> Visualizer[Visualizer]\n    Visualizer --> Renderer[Renderer]\n    Renderer --> SVG[SVG Output]\n    Renderer --> PNG[PNG Output]\n    Renderer --> HTML[HTML Preview]"
+    render: SvgDefault
+    description: "Architecture diagram of the visual communication island — islands, renderers, and output formats"
+}
+
+diagram VisualSequenceDiagram {
+    type: mermaid
+    source: "sequenceDiagram\n    participant User\n    participant CLI\n    participant Renderer\n    participant ReviewLoop\n    User->>CLI: ark visual verify spec.ark\n    CLI->>Renderer: render(diagram)\n    Renderer-->>CLI: rendered_output\n    CLI->>ReviewLoop: start_review(rendered_output)\n    ReviewLoop-->>User: feedback_prompt\n    User->>ReviewLoop: approve\n    ReviewLoop-->>CLI: review_result"
+    render: SvgDefault
+    description: "Sequence diagram of the visual render-review-feedback pipeline"
+}
+
+// ============================================================
+// 3. PREVIEW — HTML component preview
+// ============================================================
+
+preview VisualIslandPreview {
+    source: "specs/infra/visual_island.ark"
+    viewport: desktop
+    mode: interactive
+    render: SvgDefault
+    description: "Interactive HTML preview of the visual island spec — desktop viewport, interactive LOD"
+}
+
+// ============================================================
+// 4. SCREENSHOT — captured image with metadata
+// ============================================================
+
+screenshot VisualIslandScreenshot {
+    path: "docs/screenshots/visual_island_graph.png"
+    source: "specs/infra/visual_island.ark"
+    tags: [visual, island, architecture, graph]
+    description: "Screenshot of the visual island HTML graph captured from the browser"
+}
+
+// ============================================================
+// 5. ANNOTATION — markup layer on screenshot
+// ============================================================
+
+annotation VisualIslandAnnotation {
+    target: VisualIslandScreenshot
+    element: highlight(x: 120, y: 80, width: 300, height: 60, label: "Visual items cluster")
+    element: arrow(from_x: 450, from_y: 100, to_x: 650, to_y: 200, label: "render pipeline")
+    description: "Annotated screenshot highlighting the visual items cluster and render pipeline flow"
+}
+
+// ============================================================
+// 6. VISUAL REVIEW — review cycle targeting a diagram
+// ============================================================
+
+visual_review ArchitectureDiagramReview {
+    target: VisualArchitectureDiagram
+    render: PngHighRes
+    feedback_mode: interactive
+    description: "Human-in-the-loop review cycle for the architecture diagram — renders high-res PNG and prompts for approval or feedback"
+}
+
+// ============================================================
+// 7. VISUAL SEARCH — semantic keyword search
+// ============================================================
+
+visual_search VisualIslandSearch {
+    search_mode: keyword
+    query: "visual island architecture render pipeline"
+    tags: [visual, diagram, architecture]
+    max_results: 10
+    description: "Keyword search across visual specs for architecture and render pipeline diagrams"
+}
+
+// ============================================================
+// 8. ISLAND — wraps the visual pipeline as a declared island
+// ============================================================
+
+island VisualIsland {
+    strategy: code
+    description: "Visual communication and human-in-the-loop review subsystem."
+
+    contains: [VisualArchitectureDiagram, VisualSequenceDiagram,
+               VisualIslandPreview, VisualIslandScreenshot,
+               VisualIslandAnnotation, ArchitectureDiagramReview,
+               VisualIslandSearch, SvgDefault, PngHighRes]
+
+    @in{ visual_spec: Path }
+
+    #process[strategy: code]{
+        description: "Process visual specs through render -> review -> feedback pipeline"
+    }
+
+    @out[]{ review_result: String }
+}

@@ -1,0 +1,109 @@
+// evolution_skills.ark — Reflexive evolution spec for Ark's agent skill files.
+//
+// Uses all 7 evolution item types to define the optimization pipeline
+// for .claude/skills/ content. This is the "dog-fooding" spec that
+// validates the full evolution subsystem on real targets.
+
+import stdlib.evolution
+
+// ============================================================
+// 1. EVOLUTION TARGET — skill file to be evolved
+// ============================================================
+
+evolution_target SkillEvolution {
+    tier: skill
+    file_ref: ".claude/skills/ark-dsl/SKILL.md"
+    constraints {
+        name: "size_limit"
+        type: size_limit
+        threshold: 0.2
+        enforcement: block
+        name: "semantic_preservation"
+        type: semantic_preservation
+        threshold: 0.8
+        enforcement: block
+    }
+}
+
+// ============================================================
+// 2. EVAL DATASET — synthetic evaluation data for skill quality
+// ============================================================
+
+eval_dataset SkillEvalData {
+    source: "synthetic"
+    split: {
+        train: 0.7,
+        val: 0.15,
+        test: 0.15
+    }
+    scoring_rubric: "SkillFitness"
+}
+
+// ============================================================
+// 3. FITNESS FUNCTION — multi-dimensional quality scoring
+// ============================================================
+
+fitness_function SkillFitness {
+    dimension procedure_adherence {
+        weight: 0.4
+        metric: "How well the evolved skill follows its stated procedure"
+    }
+    dimension output_correctness {
+        weight: 0.4
+        metric: "Whether following the skill produces correct outcomes"
+    }
+    dimension conciseness {
+        weight: 0.2
+        metric: "How concise and clear the skill text is"
+    }
+    aggregation: weighted_sum
+}
+
+// ============================================================
+// 4. OPTIMIZER — GEPA search engine configuration
+// ============================================================
+
+optimizer SkillOptimizer {
+    engine: gepa
+    iterations: 5
+    population_size: 4
+    mutation_strategy: reflective
+}
+
+// ============================================================
+// 5. BENCHMARK GATE — pass/fail quality threshold
+// ============================================================
+
+benchmark_gate SkillGate {
+    benchmark: "skill_quality"
+    tolerance: 0.05
+    pass_criteria: "fitness >= 0.7"
+}
+
+// ============================================================
+// 6. CONSTRAINTS — reusable named constraint definitions
+// ============================================================
+
+constraint SizeLimit {
+    type: size_limit
+    threshold: 0.2
+    enforcement: block
+}
+
+constraint SemanticPreservation {
+    type: semantic_preservation
+    threshold: 0.8
+    enforcement: block
+}
+
+// ============================================================
+// 7. EVOLUTION RUN — complete experiment binding all components
+// ============================================================
+
+evolution_run SkillEvolutionRun {
+    target: SkillEvolution
+    optimizer: SkillOptimizer
+    dataset: SkillEvalData
+    gate: SkillGate
+    status: pending
+}

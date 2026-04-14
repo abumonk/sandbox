@@ -1,0 +1,96 @@
+// ============================================================
+// l_system.ark — Simplest L-system example grammar.
+//
+// A single self-recursing rule "A" that extrudes a segment,
+// translates upward, and recurses (bounded by max_depth).
+// When depth is exhausted the evaluator emits a Terminal leaf.
+//
+// Grammar:
+//   axiom = "A"
+//   A -> extrude(1.0) | translate(0,1,0) | A   (depth-bounded)
+//
+// max_depth is 8; seed is fixed at 42.
+// ============================================================
+
+import stdlib.types
+
+// ============================================================
+// SHAPEGRAMMER ISLAND
+// ============================================================
+
+island ShapeGrammar {
+    strategy: code
+    description: "Simplest L-system: single self-recursing rule with depth bound"
+
+    $data max_depth: Int [1 .. 8]
+    $data seed:      Int [0 .. 2147483647]
+    $data axiom:     String
+
+    contains: [Rule]
+
+    invariant: $data max_depth > 0
+    invariant: $data seed >= 0
+}
+
+// ============================================================
+// RULE — abstract contract for grammar rules
+// ============================================================
+
+abstraction Shape {
+    @in  { scope: Vec3, seed: Int }
+    @out[] { }
+    invariant: true
+}
+
+class Rule {
+    $data id:          String
+    $data lhs:         String
+    $data is_terminal: Bool = false
+
+    #process[strategy: code] {
+        description: "Rule application is handled by the evaluator"
+    }
+}
+
+// ============================================================
+// OPERATION — base abstraction (mirrors operations.ark)
+// ============================================================
+
+abstraction Operation {
+    @in  { }
+    @out[] { }
+    invariant: true
+}
+
+class ExtrudeOp {
+    $data id:     String
+    $data kind:   String = "extrude"
+    $data height: Float [0.001 .. 1000.0]
+
+    #process[strategy: code] {
+        description: "Evaluator extrudes face by height"
+    }
+
+    invariant: $data height > 0.0
+}
+
+class TOp {
+    $data id:   String
+    $data kind: String = "translate"
+    $data dx:   Float
+    $data dy:   Float
+    $data dz:   Float
+
+    #process[strategy: code] {
+        description: "Evaluator translates scope origin by (dx, dy, dz)"
+    }
+}
+
+class Terminal {
+    $data name:           String
+    $data semantic_label: String
+
+    #process[strategy: code] {
+        description: "Terminal is the leaf of a derivation; no further expansion"
+    }
+}

@@ -1,0 +1,50 @@
+// ============================================================
+// semantic.ark — Semantic labeling and provenance entities
+//
+// Declares the two semantic-layer entities used by both the
+// evaluator and the semantic-rendering pipeline:
+//   - SemanticLabel — first-class semantic annotation
+//   - Provenance    — chain of rule IDs from axiom to derived shape
+//
+// Propagation semantics and render-time consumption are
+// specified in design-semantic-rendering.md.
+// ============================================================
+
+// ============================================================
+// SEMANTICLABEL — first-class semantic annotation on every shape
+//
+// Names are free-form strings (e.g. "window", "load-bearing",
+// "api-node"). Children inherit the label unless inherits=false.
+// ============================================================
+
+class SemanticLabel {
+    $data name:     String
+    $data tags:     [String]
+    $data inherits: Bool = true
+
+    #process[strategy: code] {
+        description: "SemanticLabel is immutable data; identity process"
+    }
+}
+
+// ============================================================
+// PROVENANCE — chain of rule IDs from axiom to derived shape
+//
+// depth invariants:
+//   - depth == len(rule_chain)
+//   - depth <= ShapeGrammar.max_depth
+// The first invariant is structural (evaluator-enforced).
+// The second is delegated to shape_grammar/tools/verify/termination.py
+// (Z3 pass) since max_depth lives on a different entity.
+// ============================================================
+
+class Provenance {
+    $data rule_chain: [String]
+    $data depth:      Int [0 .. 100]
+
+    #process[strategy: code] {
+        description: "Provenance is immutable; extend() returns a new instance"
+    }
+
+    invariant: $data depth >= 0
+}

@@ -1,0 +1,154 @@
+// ============================================================
+// semantic_facade.ark — Prototype 1: Semantic-rendering facade.
+//
+// A building facade grammar that attaches semantic labels to
+// each pane so the rendering pipeline can colorize by label.
+// Labels propagate from parent to child rules (inherits=true).
+//
+// Grammar sketch:
+//   axiom = "Facade"
+//   Facade -> split(Y) -> [Roof, Body, Base]
+//   Roof   -> SemanticLabel("roof") + comp(face) -> terminal
+//   Body   -> split(X) -> [Wall, Window, Wall]
+//   Wall   -> SemanticLabel("wall") + comp(face) -> terminal
+//   Window -> SemanticLabel("window") + insert(window.obj)
+//   Base   -> split(X) -> [Wall, Door, Wall]
+//   Door   -> SemanticLabel("door") + insert(door.obj)
+//
+// Labels are declared as SemanticLabel class instances per the
+// semantic.ark spec; children inherit unless inherits=false.
+// ============================================================
+
+import stdlib.types
+
+// ============================================================
+// SHAPEGRAMMER ISLAND
+// ============================================================
+
+island ShapeGrammar {
+    strategy: code
+    description: "Facade grammar with semantic labels on wall/window/door/roof"
+
+    $data max_depth: Int [1 .. 12]
+    $data seed:      Int [0 .. 2147483647]
+    $data axiom:     String
+
+    contains: [Rule]
+
+    invariant: $data max_depth > 0
+    invariant: $data seed >= 0
+}
+
+// ============================================================
+// SHAPE + RULE
+// ============================================================
+
+abstraction Shape {
+    @in  { scope: Vec3, seed: Int }
+    @out[] { }
+    invariant: true
+}
+
+class Rule {
+    $data id:          String
+    $data lhs:         String
+    $data is_terminal: Bool = false
+
+    #process[strategy: code] {
+        description: "Rule application is handled by the evaluator"
+    }
+}
+
+// ============================================================
+// SEMANTIC — label and provenance (mirrors semantic.ark)
+// ============================================================
+
+class SemanticLabel {
+    $data name:     String
+    $data tags:     [String]
+    $data inherits: Bool = true
+
+    #process[strategy: code] {
+        description: "SemanticLabel is immutable data; identity process"
+    }
+}
+
+class Provenance {
+    $data rule_chain: [String]
+    $data depth:      Int [0 .. 100]
+
+    #process[strategy: code] {
+        description: "Provenance is immutable; extend() returns a new instance"
+    }
+
+    invariant: $data depth >= 0
+}
+
+// ============================================================
+// OPERATION — abstract base + primitives
+// ============================================================
+
+abstraction Operation {
+    @in  { }
+    @out[] { }
+    invariant: true
+}
+
+class SplitOp {
+    $data id:    String
+    $data kind:  String = "split"
+    $data axis:  String
+    $data sizes: [Float]
+
+    #process[strategy: code] {
+        description: "Evaluator splits scope along axis into |sizes| parts"
+    }
+}
+
+class CompOp {
+    $data id:             String
+    $data kind:           String = "comp"
+    $data component_type: String
+
+    #process[strategy: code] {
+        description: "Evaluator decomposes shape into topological components"
+    }
+}
+
+class IOp {
+    $data id:         String
+    $data kind:       String = "insert"
+    $data asset_path: String
+
+    #process[strategy: code] {
+        description: "Evaluator inserts asset at current scope; produces Terminal"
+    }
+}
+
+class AttrEntry {
+    $data key:   String
+    $data value: String
+
+    #process[strategy: code] {
+        description: "AttrEntry is immutable data; identity process"
+    }
+}
+
+class ScopeOp {
+    $data id:    String
+    $data kind:  String = "scope"
+    $data attrs: [AttrEntry]
+
+    #process[strategy: code] {
+        description: "Evaluator pushes attrs overrides onto current Scope"
+    }
+}
+
+class Terminal {
+    $data name:           String
+    $data semantic_label: String
+
+    #process[strategy: code] {
+        description: "Terminal is the leaf of a derivation; no further expansion"
+    }
+}

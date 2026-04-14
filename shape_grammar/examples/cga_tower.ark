@@ -1,0 +1,131 @@
+// ============================================================
+// cga_tower.ark — Classic CGA-style procedural building tower.
+//
+// Grammar overview:
+//   axiom = "Lot"
+//   Lot    -> extrude(footprint height) -> Building
+//   Building -> split(Y, [floor_h repeated]) -> Floor
+//   Floor    -> split(X, [wall proportions]) -> Wall | Window
+//   Wall     -> comp(face) -> FaceTile (terminal)
+//   Window   -> insert(assets/window.obj) (terminal)
+//
+// max_depth 20 ensures enough depth for floor/wall/window levels.
+// ============================================================
+
+import stdlib.types
+
+// ============================================================
+// SHAPEGRAMMER ISLAND
+// ============================================================
+
+island ShapeGrammar {
+    strategy: code
+    description: "CGA-style tower: extrude + split producing floors, walls, windows"
+
+    $data max_depth: Int [1 .. 20]
+    $data seed:      Int [0 .. 2147483647]
+    $data axiom:     String
+
+    contains: [Rule]
+
+    invariant: $data max_depth > 0
+    invariant: $data seed >= 0
+}
+
+// ============================================================
+// SHAPE + RULE — structural declarations
+// ============================================================
+
+abstraction Shape {
+    @in  { scope: Vec3, seed: Int }
+    @out[] { }
+    invariant: true
+}
+
+class Rule {
+    $data id:          String
+    $data lhs:         String
+    $data is_terminal: Bool = false
+
+    #process[strategy: code] {
+        description: "Rule application is handled by the evaluator"
+    }
+}
+
+// ============================================================
+// OPERATION — abstract base
+// ============================================================
+
+abstraction Operation {
+    @in  { }
+    @out[] { }
+    invariant: true
+}
+
+class ExtrudeOp {
+    $data id:     String
+    $data kind:   String = "extrude"
+    $data height: Float [0.001 .. 1000.0]
+
+    #process[strategy: code] {
+        description: "Evaluator extrudes face by height"
+    }
+
+    invariant: $data height > 0.0
+}
+
+class SplitOp {
+    $data id:    String
+    $data kind:  String = "split"
+    $data axis:  String
+    $data sizes: [Float]
+
+    #process[strategy: code] {
+        description: "Evaluator splits scope along axis into |sizes| parts"
+    }
+}
+
+class CompOp {
+    $data id:             String
+    $data kind:           String = "comp"
+    $data component_type: String
+
+    #process[strategy: code] {
+        description: "Evaluator decomposes shape into topological components"
+    }
+}
+
+class IOp {
+    $data id:         String
+    $data kind:       String = "insert"
+    $data asset_path: String
+
+    #process[strategy: code] {
+        description: "Evaluator inserts asset at current scope; produces Terminal"
+    }
+}
+
+class SOp {
+    $data id:   String
+    $data kind: String = "scale"
+    $data sx:   Float [0.001 .. 1000.0]
+    $data sy:   Float [0.001 .. 1000.0]
+    $data sz:   Float [0.001 .. 1000.0]
+
+    #process[strategy: code] {
+        description: "Evaluator scales scope by (sx, sy, sz)"
+    }
+
+    invariant: $data sx > 0.0
+    invariant: $data sy > 0.0
+    invariant: $data sz > 0.0
+}
+
+class Terminal {
+    $data name:           String
+    $data semantic_label: String
+
+    #process[strategy: code] {
+        description: "Terminal is the leaf of a derivation; no further expansion"
+    }
+}

@@ -1,0 +1,45 @@
+// visual_examples.ark — Example Visual Specs
+//
+// Typical usage patterns for visual items in the ARK DSL.
+// Shows Ark's own architecture visualized using visual items.
+//
+// Parse:   python ark.py parse specs/examples/visual_examples.ark
+// Verify:  python ark.py visual verify specs/examples/visual_examples.ark
+
+import stdlib.types
+import stdlib.visual
+
+// ============================================================
+// 1. RENDER CONFIG — SVG output for architecture diagram
+// ============================================================
+
+render_config ArkArchSvg {
+    format: svg
+    width: 1400
+    height: 900
+    theme: "default"
+    scale: 1
+    description: "SVG render config for Ark architecture diagrams"
+}
+
+// ============================================================
+// 2. DIAGRAM — Ark's own architecture as mermaid
+// ============================================================
+
+diagram ArkArchitectureDiagram {
+    type: mermaid
+    source: "graph LR\n    subgraph Specs\n        root[root.ark]\n        infra[infra/*.ark]\n        meta[meta/*.ark]\n        game[game/*.ark]\n    end\n    subgraph Tools\n        parser[Parser]\n        verify[Verify]\n        codegen[Codegen]\n        visualizer[Visualizer]\n    end\n    root --> parser\n    infra --> parser\n    meta --> parser\n    game --> parser\n    parser --> verify\n    verify --> codegen\n    codegen --> visualizer"
+    render: ArkArchSvg
+    description: "Ark's own architecture diagram — specs feeding into the parser, verify, codegen, and visualizer tools"
+}
+
+// ============================================================
+// 3. VISUAL REVIEW — review the architecture diagram
+// ============================================================
+
+visual_review ArkArchitectureReview {
+    target: ArkArchitectureDiagram
+    render: ArkArchSvg
+    feedback_mode: inline
+    description: "Review cycle for the Ark architecture diagram — inline feedback mode"
+}

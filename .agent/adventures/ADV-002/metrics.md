@@ -18,3 +18,5 @@ agent_runs: 0
 | implementer | ADV002-T015 | sonnet | ~6000 | ~1500 | 3min | 12 | done |
 | implementer | ADV002-T016 | sonnet | 18500 | 1200 | 8min | 18 | done |
 | implementer | ADV002-T017 | sonnet | ~22000 | ~5500 | 10min | 20 | done |
+| adventure-reviewer | ADV-002 | opus | ~45000 | ~8000 | 5min | 12 | complete |
+| knowledge-extractor | ADV-001,ADV-002,ADV-003 | sonnet | ~18000 | ~4000 | ~5min | ~8 | complete |

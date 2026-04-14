@@ -1,0 +1,3378 @@
+diff --git a/ark/ark.py b/ark/ark.py
+index 517a0ad..ab44cd7 100644
+--- a/ark/ark.py
++++ b/ark/ark.py
+@@ -21,6 +21,11 @@ Usage:
+   ark codegraph query dead-code         → find dead code
+   ark codegraph query complexity [--threshold N]  → find complex functions
+   ark codegraph graph <path> [--out F]  → generate interactive HTML visualization
++  ark evolution run    <spec.ark> [--run <name>]  → run evolution loop(s)
++  ark evolution status <spec.ark>                  → list evolution_run items and status
++  ark agent    codegen <file.ark> [--out <dir>]   → generate agent artifacts (YAML/MD)
++  ark agent    verify  <file.ark>                  → run agent-specific Z3 checks
++  ark visual   pipeline|codegen|verify <file>      → visual pipeline, codegen, or verify
+ """
+ 
+ import sys
+@@ -41,6 +46,9 @@ sys.path.insert(0, str(TOOLS / "visualizer"))
+ sys.path.insert(0, str(TOOLS / "diff"))
+ sys.path.insert(0, str(TOOLS / "watch"))
+ sys.path.insert(0, str(TOOLS / "dispatch"))
++sys.path.insert(0, str(TOOLS / "evolution"))
++sys.path.insert(0, str(TOOLS / "agent"))
++sys.path.insert(0, str(TOOLS / "visual"))
+ sys.path.insert(0, str(TOOLS))  # allows: import codegraph.indexer
+ 
+ 
+@@ -543,6 +551,324 @@ Usage:
+         sys.exit(1)
+ 
+ 
++def cmd_evolution(args):
++    """Evolution subcommands: run, status."""
++
++    EVOLUTION_USAGE = """\
++Usage:
++  ark evolution run    <spec.ark> [--run <name>]   Run evolution loop(s) from spec
++  ark evolution status <spec.ark>                   List all evolution_run items and status
++"""
++
++    if not args or args[0] in ("-h", "--help"):
++        print(EVOLUTION_USAGE)
++        return
++
++    sub = args[0]
++    rest = args[1:]
++
++    if sub == "run":
++        if not rest:
++            print("Usage: ark evolution run <spec.ark> [--run <name>]", file=sys.stderr)
++            sys.exit(1)
++
++        filepath = Path(rest[0])
++        if not filepath.exists():
++            print(f"Error: file not found: {filepath}", file=sys.stderr)
++            sys.exit(1)
++
++        # Parse optional --run <name>
++        run_name = None
++        for i, a in enumerate(rest[1:], 1):
++            if a == "--run" and i + 1 < len(rest):
++                run_name = rest[i + 1]
++
++        source = filepath.read_text(encoding="utf-8")
++        ark_file = _safe_parse(source, file_path=filepath)
++
++        # Collect evolution_run items from parsed ArkFile
++        evolution_runs = getattr(ark_file, "evolution_runs", {})
++        if not evolution_runs:
++            print("No evolution_run items found in spec.", file=sys.stderr)
++            sys.exit(1)
++
++        # Filter to specific run if --run was given
++        if run_name is not None:
++            if run_name not in evolution_runs:
++                known = ", ".join(sorted(evolution_runs.keys()))
++                print(
++                    f"Error: unknown evolution_run name {run_name!r}. "
++                    f"Known runs: {known}",
++                    file=sys.stderr,
++                )
++                sys.exit(1)
++            targets = {run_name: evolution_runs[run_name]}
++        else:
++            targets = evolution_runs
++
++        from evolution_runner import resolve_context, run_evolution
++
++        for name, er in targets.items():
++            print(f"\n{'='*60}")
++            print(f"  Evolution run: {name}")
++            print(f"{'='*60}")
++
++            # Convert dataclass to dict if needed
++            if hasattr(er, "__dataclass_fields__"):
++                import dataclasses
++                er_dict = dataclasses.asdict(er)
++            else:
++                er_dict = er
++
++            try:
++                context = resolve_context(er_dict, ark_file)
++            except ValueError as exc:
++                print(f"  Error resolving context: {exc}", file=sys.stderr)
++                sys.exit(1)
++
++            report = run_evolution(context)
++
++            print(f"  Target:      {report.target_name}")
++            print(f"  Status:      {report.status}")
++            print(f"  Generations: {report.generations}")
++            print(f"  Best fitness:{report.best_fitness:.4f}")
++            print(f"  Benchmark:   {'PASSED' if report.benchmark_passed else 'FAILED'}")
++            if report.fitness_trajectory:
++                traj = ", ".join(f"{v:.3f}" for v in report.fitness_trajectory)
++                print(f"  Trajectory:  [{traj}]")
++            if report.constraint_results:
++                print(f"  Constraints:")
++                for cr in report.constraint_results:
++                    status_str = getattr(cr, "status", str(cr))
++                    print(f"    - {status_str}")
++
++    elif sub == "status":
++        if not rest:
++            print("Usage: ark evolution status <spec.ark>", file=sys.stderr)
++            sys.exit(1)
++
++        filepath = Path(rest[0])
++        if not filepath.exists():
++            print(f"Error: file not found: {filepath}", file=sys.stderr)
++            sys.exit(1)
++
++        source = filepath.read_text(encoding="utf-8")
++        ark_file = _safe_parse(source, file_path=filepath)
++
++        evolution_runs = getattr(ark_file, "evolution_runs", {})
++        if not evolution_runs:
++            print("No evolution_run items found in spec.")
++            return
++
++        print(f"Evolution runs in {filepath.name}:")
++        print(f"  {'Name':<24} {'Status':<12} {'Target':<20} {'Optimizer':<16} {'Dataset'}")
++        print(f"  {'-'*24} {'-'*12} {'-'*20} {'-'*16} {'-'*16}")
++        for name, er in evolution_runs.items():
++            if hasattr(er, "__dataclass_fields__"):
++                status = getattr(er, "status", None) or "pending"
++                target_ref = getattr(er, "target_ref", None) or ""
++                optimizer_ref = getattr(er, "optimizer_ref", None) or ""
++                dataset_ref = getattr(er, "dataset_ref", None) or ""
++            else:
++                status = er.get("status") or "pending"
++                target_ref = er.get("target_ref") or ""
++                optimizer_ref = er.get("optimizer_ref") or ""
++                dataset_ref = er.get("dataset_ref") or ""
++            print(f"  {name:<24} {status:<12} {target_ref:<20} {optimizer_ref:<16} {dataset_ref}")
++
++    else:
++        print(f"Unknown evolution subcommand: {sub}", file=sys.stderr)
++        print(EVOLUTION_USAGE)
++        sys.exit(1)
++
++
++def cmd_agent(args):
++    """Agent subcommands: codegen, verify."""
++
++    AGENT_USAGE = """\
++Usage:
++  ark agent codegen <file.ark> [--out <dir>]   Generate agent artifacts (YAML/MD)
++  ark agent verify  <file.ark>                  Run agent-specific Z3 verification checks
++"""
++
++    if not args or args[0] in ("-h", "--help"):
++        print(AGENT_USAGE)
++        return
++
++    sub = args[0]
++    rest = args[1:]
++
++    if sub == "codegen":
++        if not rest:
++            print("Usage: ark agent codegen <file.ark> [--out <dir>]", file=sys.stderr)
++            sys.exit(1)
++
++        filepath = Path(rest[0])
++        if not filepath.exists():
++            print(f"Error: file not found: {filepath}", file=sys.stderr)
++            sys.exit(1)
++
++        out_dir = None
++        for i, a in enumerate(rest[1:], 1):
++            if a == "--out" and i + 1 < len(rest):
++                out_dir = Path(rest[i + 1])
++
++        source = filepath.read_text(encoding="utf-8")
++        ark_file = _safe_parse(source, file_path=filepath)
++
++        from ark_parser import to_json
++        import json as _json
++        ast_json = _json.loads(to_json(ark_file))
++
++        from agent_codegen import generate
++        results = generate(ast_json, out_dir)
++        if not out_dir:
++            for fname, content in results.items():
++                sep = "#" if fname.endswith((".yaml", ".txt", ".md")) else "//"
++                print(f"\n{sep} === {fname} ===")
++                print(content)
++        print(f"\nGenerated {len(results)} agent artifact(s)")
++
++    elif sub == "verify":
++        if not rest:
++            print("Usage: ark agent verify <file.ark>", file=sys.stderr)
++            sys.exit(1)
++
++        filepath = Path(rest[0])
++        if not filepath.exists():
++            print(f"Error: file not found: {filepath}", file=sys.stderr)
++            sys.exit(1)
++
++        source = filepath.read_text(encoding="utf-8")
++        ark_file = _safe_parse(source, file_path=filepath)
++
++        from ark_parser import to_json
++        import json as _json
++        ast_json = _json.loads(to_json(ark_file))
++
++        from agent_verify import verify_agent
++        results = verify_agent(ast_json)
++        failed = sum(1 for r in results if r.get("status") == "fail")
++        if failed > 0:
++            sys.exit(1)
++
++    else:
++        print(f"Unknown agent subcommand: {sub}", file=sys.stderr)
++        print(AGENT_USAGE)
++        sys.exit(1)
++
++
++def cmd_visual(args):
++    """Visual subcommands: pipeline, codegen, verify."""
++
++    VISUAL_USAGE = """\
++Usage:
++  ark visual pipeline <file.ark>             Run the full visual pipeline
++  ark visual codegen  <file.ark> [--out DIR] Generate visual artifacts
++  ark visual verify   <file.ark>             Run visual verification checks
++"""
++
++    if not args or args[0] in ("-h", "--help"):
++        print(VISUAL_USAGE)
++        return
++
++    sub = args[0]
++    rest = args[1:]
++
++    if sub == "pipeline":
++        if not rest:
++            print("Usage: ark visual pipeline <file.ark>", file=sys.stderr)
++            sys.exit(1)
++
++        filepath = Path(rest[0])
++        if not filepath.exists():
++            print(f"Error: file not found: {filepath}", file=sys.stderr)
++            sys.exit(1)
++
++        source = filepath.read_text(encoding="utf-8")
++        ark_file = _safe_parse(source, file_path=filepath)
++
++        from ark_parser import to_json
++        import json as _json
++        ast_json = _json.loads(to_json(ark_file))
++
++        try:
++            from visual_runner import run_visual_pipeline
++            results = run_visual_pipeline(ast_json)
++            import json as _json2
++            print(_json2.dumps(results, indent=2, ensure_ascii=False, default=str))
++        except ImportError:
++            print("visual_runner module not found (will be available after T016)", file=sys.stderr)
++            sys.exit(1)
++
++    elif sub == "codegen":
++        if not rest:
++            print("Usage: ark visual codegen <file.ark> [--out DIR]", file=sys.stderr)
++            sys.exit(1)
++
++        filepath = Path(rest[0])
++        if not filepath.exists():
++            print(f"Error: file not found: {filepath}", file=sys.stderr)
++            sys.exit(1)
++
++        out_dir = None
++        for i, a in enumerate(rest[1:], 1):
++            if a == "--out" and i + 1 < len(rest):
++                out_dir = Path(rest[i + 1])
++
++        source = filepath.read_text(encoding="utf-8")
++        ark_file = _safe_parse(source, file_path=filepath)
++
++        from ark_parser import to_json
++        import json as _json
++        ast_json = _json.loads(to_json(ark_file))
++
++        try:
++            from visual_codegen import generate
++            results = generate(ast_json, out_dir)
++            if not out_dir:
++                for fname, content in results.items():
++                    sep = "#" if fname.endswith((".yaml", ".txt", ".md")) else "//"
++                    print(f"\n{sep} === {fname} ===")
++                    print(content)
++            print(f"\nGenerated {len(results)} visual artifact(s)")
++        except ImportError:
++            print("visual_codegen module not found (will be available after T016)", file=sys.stderr)
++            sys.exit(1)
++
++    elif sub == "verify":
++        if not rest:
++            print("Usage: ark visual verify <file.ark>", file=sys.stderr)
++            sys.exit(1)
++
++        filepath = Path(rest[0])
++        if not filepath.exists():
++            print(f"Error: file not found: {filepath}", file=sys.stderr)
++            sys.exit(1)
++
++        source = filepath.read_text(encoding="utf-8")
++        ark_file = _safe_parse(source, file_path=filepath)
++
++        from ark_parser import to_json
++        import json as _json
++        ast_json = _json.loads(to_json(ark_file))
++
++        try:
++            from visual_verify import verify_visual
++            results = verify_visual(ast_json)
++            failed = sum(1 for r in results if r.get("status") == "fail")
++            if failed > 0:
++                sys.exit(1)
++        except ImportError:
++            print("visual_verify module not found (will be available after T016)", file=sys.stderr)
++            sys.exit(1)
++
++    else:
++        print(f"Unknown visual subcommand: {sub}", file=sys.stderr)
++        print(VISUAL_USAGE)
++        sys.exit(1)
++
++
+ COMMANDS = {
+     "parse": cmd_parse,
+     "verify": cmd_verify,
+@@ -555,6 +881,9 @@ COMMANDS = {
+     "pipeline": cmd_pipeline,
+     "codegraph": cmd_codegraph,
+     "studio": cmd_studio,
++    "evolution": cmd_evolution,
++    "agent": cmd_agent,
++    "visual": cmd_visual,
+ }
+ 
+ 
+diff --git a/ark/dsl/grammar/ark.pest b/ark/dsl/grammar/ark.pest
+index 323c86a..bfe1d1b 100644
+--- a/ark/dsl/grammar/ark.pest
++++ b/ark/dsl/grammar/ark.pest
+@@ -34,6 +34,28 @@ item = _{
+   | hook_def
+   | rule_def
+   | template_def
++  | evolution_target_def
++  | eval_dataset_def
++  | fitness_function_def
++  | optimizer_def
++  | benchmark_gate_def
++  | evolution_run_def
++  | constraint_def
++  | agent_def
++  | platform_def
++  | gateway_def
++  | execution_backend_def
++  | skill_def
++  | learning_config_def
++  | cron_task_def
++  | model_config_def
++  | diagram_def
++  | preview_def
++  | annotation_def
++  | visual_review_def
++  | screenshot_def
++  | visual_search_def
++  | render_config_def
+ }
+ 
+ // ============================================================
+@@ -361,6 +383,384 @@ sections_stmt = { "sections:" ~ "[" ~ string_list ~ "]" }
+ bound_to_stmt = { "bound_to:" ~ ident }
+ string_list   = { string_literal ~ ("," ~ string_literal)* }
+ 
++// ============================================================
++// EVOLUTION SYSTEM
++// ============================================================
++
++// 1. evolution_target_def — model or artifact to be evolved
++evolution_target_def  = { "evolution_target" ~ ident ~ "{" ~ evolution_target_body ~ "}" }
++evolution_target_body = { evolution_target_member* }
++evolution_target_member = _{
++    tier_stmt
++  | file_ref_stmt
++  | constraints_block
++  | description_stmt
++  | data_field
++}
++
++file_ref_stmt    = { "file_ref:" ~ string_literal }
++constraints_block = { "constraints" ~ "{" ~ constraint_item* ~ "}" }
++constraint_item  = { constraint_item_member+ }
++constraint_item_member = _{
++    name_stmt
++  | type_stmt
++  | threshold_stmt
++  | enforcement_stmt
++}
++
++name_stmt        = { "name:" ~ string_literal }
++type_stmt        = { "type:" ~ ident }
++threshold_stmt   = { "threshold:" ~ expression }
++enforcement_stmt = { "enforcement:" ~ ident }
++
++// 2. eval_dataset_def — dataset used to evaluate evolved artifacts
++eval_dataset_def  = { "eval_dataset" ~ ident ~ "{" ~ eval_dataset_body ~ "}" }
++eval_dataset_body = { eval_dataset_member* }
++eval_dataset_member = _{
++    source_stmt
++  | split_stmt
++  | scoring_rubric_stmt
++  | description_stmt
++  | data_field
++}
++
++source_stmt        = { "source:" ~ string_literal }
++split_stmt         = { "split:" ~ "{" ~ split_entry ~ ("," ~ split_entry)* ~ ","? ~ "}" }
++split_entry        = { ident ~ ":" ~ number }
++scoring_rubric_stmt = { "scoring_rubric:" ~ string_literal }
++
++// 3. fitness_function_def — multi-dimensional scoring function
++fitness_function_def  = { "fitness_function" ~ ident ~ "{" ~ fitness_function_body ~ "}" }
++fitness_function_body = { fitness_function_member* }
++fitness_function_member = _{
++    dimension_stmt
++  | aggregation_stmt
++  | description_stmt
++  | data_field
++}
++
++dimension_stmt   = { "dimension" ~ ident ~ "{" ~ dimension_body ~ "}" }
++dimension_body   = { dimension_member* }
++dimension_member = _{
++    weight_stmt
++  | metric_stmt
++}
++weight_stmt      = { "weight:" ~ number }
++metric_stmt      = { "metric:" ~ string_literal }
++aggregation_stmt = { "aggregation:" ~ ident }
++
++// 4. optimizer_def — search/optimization engine configuration
++optimizer_def  = { "optimizer" ~ ident ~ "{" ~ optimizer_body ~ "}" }
++optimizer_body = { optimizer_member* }
++optimizer_member = _{
++    engine_stmt
++  | iterations_stmt
++  | population_stmt
++  | mutation_stmt
++  | description_stmt
++  | data_field
++}
++
++engine_stmt     = { "engine:" ~ ident }
++iterations_stmt = { "iterations:" ~ number }
++population_stmt = { "population_size:" ~ number }
++mutation_stmt   = { "mutation_strategy:" ~ ident }
++
++// 5. benchmark_gate_def — pass/fail gate for a benchmark
++benchmark_gate_def  = { "benchmark_gate" ~ ident ~ "{" ~ benchmark_gate_body ~ "}" }
++benchmark_gate_body = { benchmark_gate_member* }
++benchmark_gate_member = _{
++    benchmark_stmt
++  | tolerance_stmt
++  | pass_criteria_stmt
++  | description_stmt
++  | data_field
++}
++
++benchmark_stmt     = { "benchmark:" ~ string_literal }
++tolerance_stmt     = { "tolerance:" ~ number }
++pass_criteria_stmt = { "pass_criteria:" ~ string_literal }
++
++// 6. evolution_run_def — a complete evolution experiment record
++evolution_run_def  = { "evolution_run" ~ ident ~ "{" ~ evolution_run_body ~ "}" }
++evolution_run_body = { evolution_run_member* }
++evolution_run_member = _{
++    target_ref_stmt
++  | optimizer_ref_stmt
++  | dataset_ref_stmt
++  | gate_ref_stmt
++  | status_stmt
++  | description_stmt
++  | data_field
++}
++
++target_ref_stmt    = { "target:" ~ ident }
++optimizer_ref_stmt = { "optimizer:" ~ ident }
++dataset_ref_stmt   = { "dataset:" ~ ident }
++gate_ref_stmt      = { "gate:" ~ ident }
++status_stmt        = { "status:" ~ ident }
++
++// 7. constraint_def — reusable named constraint
++constraint_def      = { "constraint" ~ ident ~ "{" ~ constraint_def_body ~ "}" }
++constraint_def_body = { constraint_def_member* }
++constraint_def_member = _{
++    type_stmt
++  | threshold_stmt
++  | enforcement_stmt
++  | description_stmt
++  | data_field
++}
++
++// ============================================================
++// AGENT SYSTEM
++// ============================================================
++
++// 1. agent_def — autonomous agent with persona, model, capabilities, learning
++agent_def  = { "agent" ~ ident ~ "{" ~ agent_body ~ "}" }
++agent_body = { agent_member* }
++agent_member = _{
++    persona_stmt
++  | model_ref_stmt
++  | capabilities_stmt
++  | learning_ref_stmt
++  | backends_stmt
++  | data_field
++  | description_stmt
++  | in_port
++  | out_port
++  | process_rule
++}
++
++persona_stmt      = { "persona:" ~ string_literal }
++model_ref_stmt    = { "model:" ~ ident }
++capabilities_stmt = { "capabilities:" ~ "[" ~ ident_list ~ "]" }
++learning_ref_stmt = { "learning:" ~ ident }
++backends_stmt     = { "backends:" ~ "[" ~ ident_list ~ "]" }
++
++// 2. platform_def — messaging platform endpoint (terminal, telegram, discord, etc.)
++platform_def  = { "platform" ~ ident ~ "{" ~ platform_body ~ "}" }
++platform_body = { platform_member* }
++platform_member = _{
++    type_stmt
++  | auth_stmt
++  | format_stmt
++  | endpoint_stmt
++  | data_field
++  | description_stmt
++}
++
++auth_stmt     = { "auth:" ~ string_literal }
++format_stmt   = { "format:" ~ ident }
++endpoint_stmt = { "endpoint:" ~ string_literal }
++
++// 3. gateway_def — unified messaging gateway binding agent to platforms
++gateway_def  = { "gateway" ~ ident ~ "{" ~ gateway_body ~ "}" }
++gateway_body = { gateway_member* }
++gateway_member = _{
++    agent_ref_stmt
++  | platforms_stmt
++  | routes_stmt
++  | data_field
++  | description_stmt
++  | in_port
++  | out_port
++  | process_rule
++}
++
++agent_ref_stmt  = { "agent:" ~ ident }
++platforms_stmt  = { "platforms:" ~ "[" ~ ident_list ~ "]" }
++routes_stmt     = { "routes:" ~ "[" ~ route_entry ~ ("," ~ route_entry)* ~ "]" }
++route_entry     = { ident ~ "->" ~ ident }
++
++// 4. execution_backend_def — runtime environment with resource limits
++execution_backend_def  = { "execution_backend" ~ ident ~ "{" ~ exec_backend_body ~ "}" }
++exec_backend_body      = { exec_backend_member* }
++exec_backend_member = _{
++    backend_type_stmt
++  | connection_stmt
++  | limits_stmt
++  | data_field
++  | description_stmt
++}
++
++backend_type_stmt = { "backend_type:" ~ ident }
++connection_stmt   = { "connection:" ~ string_literal }
++limits_stmt       = { "limits:" ~ "{" ~ limit_entry ~ ("," ~ limit_entry)* ~ "}" }
++limit_entry       = { ident ~ ":" ~ expression }
++
++// 5. skill_def — procedural knowledge unit with trigger and steps
++skill_def  = { "skill" ~ ident ~ "{" ~ skill_body ~ "}" }
++skill_body = { skill_member* }
++skill_member = _{
++    trigger_stmt
++  | steps_stmt
++  | status_stmt
++  | improvement_stmt
++  | data_field
++  | description_stmt
++}
++
++trigger_stmt     = { "trigger:" ~ string_literal }
++steps_stmt       = { "steps:" ~ "[" ~ string_list ~ "]" }
++improvement_stmt = { "improvement:" ~ "{" ~ meta_pair_list ~ "}" }
++
++// 6. learning_config_def — settings for skill generation and self-improvement
++learning_config_def  = { "learning_config" ~ ident ~ "{" ~ learning_body ~ "}" }
++learning_body        = { learning_member* }
++learning_member = _{
++    mode_stmt
++  | skill_gen_stmt
++  | memory_persist_stmt
++  | session_search_stmt
++  | self_improve_stmt
++  | data_field
++  | description_stmt
++}
++
++mode_stmt           = { "mode:" ~ ident }
++skill_gen_stmt      = { "skill_generation:" ~ expression }
++memory_persist_stmt = { "memory_persist:" ~ expression }
++session_search_stmt = { "session_search:" ~ expression }
++self_improve_stmt   = { "self_improve:" ~ expression }
++
++// 7. cron_task_def — scheduled automation with platform delivery
++cron_task_def  = { "cron_task" ~ ident ~ "{" ~ cron_body ~ "}" }
++cron_body      = { cron_member* }
++cron_member = _{
++    schedule_stmt
++  | agent_ref_stmt
++  | platform_delivery_stmt
++  | action_stmt
++  | data_field
++  | description_stmt
++}
++
++schedule_stmt           = { "schedule:" ~ string_literal }
++platform_delivery_stmt  = { "deliver_to:" ~ ident }
++
++// 8. model_config_def — LLM provider configuration with fallback chain
++model_config_def  = { "model_config" ~ ident ~ "{" ~ model_config_body ~ "}" }
++model_config_body = { model_config_member* }
++model_config_member = _{
++    provider_stmt
++  | model_id_stmt
++  | fallback_stmt
++  | params_stmt
++  | cost_limit_stmt
++  | data_field
++  | description_stmt
++}
++
++provider_stmt   = { "provider:" ~ ident }
++model_id_stmt   = { "model_id:" ~ string_literal }
++fallback_stmt   = { "fallback:" ~ ident }
++params_stmt     = { "params:" ~ "{" ~ meta_pair_list ~ "}" }
++cost_limit_stmt = { "cost_limit:" ~ expression }
++
++// ============================================================
++// VISUAL COMMUNICATION LAYER
++// ============================================================
++
++// 1. diagram_def — named visual artifact
++diagram_def  = { "diagram" ~ ident ~ "{" ~ diagram_body ~ "}" }
++diagram_body = { diagram_member* }
++diagram_member = _{
++    diagram_type_stmt
++  | source_stmt
++  | render_config_stmt
++  | description_stmt
++  | data_field
++}
++
++diagram_type_stmt  = { "type:" ~ ident }
++render_config_stmt = { "render:" ~ ident }
++
++// 2. preview_def — HTML component preview
++preview_def  = { "preview" ~ ident ~ "{" ~ preview_body ~ "}" }
++preview_body = { preview_member* }
++preview_member = _{
++    source_stmt
++  | viewport_stmt
++  | mode_stmt
++  | render_config_stmt
++  | description_stmt
++  | data_field
++}
++
++viewport_stmt = { "viewport:" ~ ident }
++
++// 3. annotation_def — markup layer on image
++annotation_def  = { "annotation" ~ ident ~ "{" ~ annotation_body ~ "}" }
++annotation_body = { annotation_member* }
++annotation_member = _{
++    target_ref_stmt
++  | element_stmt
++  | description_stmt
++  | data_field
++}
++
++element_stmt = { "element:" ~ ident ~ "(" ~ meta_pair_list ~ ")" }
++
++// 4. visual_review_def — review cycle
++visual_review_def  = { "visual_review" ~ ident ~ "{" ~ visual_review_body ~ "}" }
++visual_review_body = { visual_review_member* }
++visual_review_member = _{
++    target_ref_stmt
++  | render_config_stmt
++  | feedback_mode_stmt
++  | description_stmt
++  | data_field
++}
++
++feedback_mode_stmt = { "feedback_mode:" ~ ident }
++
++// 5. screenshot_def — captured image with metadata
++screenshot_def  = { "screenshot" ~ ident ~ "{" ~ screenshot_body ~ "}" }
++screenshot_body = { screenshot_member* }
++screenshot_member = _{
++    path_stmt
++  | source_stmt
++  | tags_stmt
++  | description_stmt
++  | data_field
++}
++
++tags_stmt = { "tags:" ~ "[" ~ ident_list ~ "]" }
++
++// 6. visual_search_def — semantic search query
++visual_search_def  = { "visual_search" ~ ident ~ "{" ~ visual_search_body ~ "}" }
++visual_search_body = { visual_search_member* }
++visual_search_member = _{
++    search_mode_stmt
++  | query_stmt
++  | tags_stmt
++  | max_results_stmt
++  | description_stmt
++  | data_field
++}
++
++search_mode_stmt = { "search_mode:" ~ ident }
++query_stmt       = { "query:" ~ string_literal }
++max_results_stmt = { "max_results:" ~ number }
++
++// 7. render_config_def — output configuration
++render_config_def  = { "render_config" ~ ident ~ "{" ~ render_config_body ~ "}" }
++render_config_body = { render_config_member* }
++render_config_member = _{
++    format_stmt
++  | width_stmt
++  | height_stmt
++  | theme_stmt
++  | scale_stmt
++  | description_stmt
++  | data_field
++}
++
++width_stmt  = { "width:" ~ number }
++height_stmt = { "height:" ~ number }
++theme_stmt  = { "theme:" ~ string_literal }
++scale_stmt  = { "scale:" ~ number }
++
+ // ============================================================
+ // TERMINALS
+ // ============================================================
+diff --git a/ark/specs/root.ark b/ark/specs/root.ark
+index ef4fbd2..da5e1cd 100644
+--- a/ark/specs/root.ark
++++ b/ark/specs/root.ark
+@@ -113,10 +113,17 @@ registry SystemRegistry {
+ 
+   // --- Infra islands ---
+   register CodeGraphIsland   { priority: 50 }
++  register AgentSystem       { phase: infra, priority: 40 }
++  register VisualIsland      { phase: infra, priority: 45 }
+ 
+   // --- Studio hierarchy specs ---
+   register ArkStudio         { phase: meta, priority: 1 }
+   register GameStudio        { phase: meta, priority: 2 }
++  register ArkAgent          { phase: meta, priority: 3 }
++
++  // --- Evolution specs ---
++  register EvolutionSkills   { source: "specs/meta/evolution_skills.ark", phase: meta, priority: 5 }
++  register EvolutionRoles    { source: "specs/meta/evolution_roles.ark", phase: meta, priority: 6 }
+ 
+   // --- Runtime islands (заполняется по мере разработки) ---
+   // register VehiclePhysics  { phase: runtime, priority: 10 }
+diff --git a/ark/tools/codegen/ark_codegen.py b/ark/tools/codegen/ark_codegen.py
+index c58f6ac..277f20b 100644
+--- a/ark/tools/codegen/ark_codegen.py
++++ b/ark/tools/codegen/ark_codegen.py
+@@ -849,12 +849,28 @@ def gen_rust_predicate(item: dict) -> str:
+ def codegen_file(ast_json: dict, target: str = "rust", out_dir: Path = None) -> dict:
+     """Generate code for all entities in an ARK file.
+ 
+-    Supported targets: rust, cpp, proto, studio.
++    Supported targets: rust, cpp, proto, studio, evolution, visual.
+     For ``studio`` the call is delegated to studio_codegen.gen_studio which
+     works on the *parsed* ArkFile object, not the JSON AST.  To keep the
+     existing caller interface intact we re-parse the source when the target
+     is ``studio`` and the caller passes a raw JSON dict.
+     """
++    # ------------------------------------------------------------------ visual
++    if target == "visual":
++        try:
++            from visual_codegen import generate as _visual_generate
++        except ImportError:
++            from tools.codegen.visual_codegen import generate as _visual_generate
++        return _visual_generate(ast_json, out_dir)
++
++    # --------------------------------------------------------------- evolution
++    if target == "evolution":
++        try:
++            from evolution_codegen import generate as _evo_generate
++        except ImportError:
++            from tools.codegen.evolution_codegen import generate as _evo_generate
++        return _evo_generate(ast_json, out_dir)
++
+     # ------------------------------------------------------------------ studio
+     if target == "studio":
+         # studio_codegen operates on the ArkFile dataclass, not on JSON.
+@@ -969,7 +985,7 @@ def main():
+     import argparse
+     parser = argparse.ArgumentParser(description="ARK Codegen")
+     parser.add_argument("input", help=".ark or .json file")
+-    parser.add_argument("--target", choices=["rust", "cpp", "proto"], default="rust")
++    parser.add_argument("--target", choices=["rust", "cpp", "proto", "studio", "evolution", "visual"], default="rust")
+     parser.add_argument("--out", help="Output directory", default=None)
+     parser.add_argument("--stdout", action="store_true", help="Print to stdout")
+     args = parser.parse_args()
+diff --git a/ark/tools/parser/ark_grammar.lark b/ark/tools/parser/ark_grammar.lark
+index 4bcc05c..4d2a13c 100644
+--- a/ark/tools/parser/ark_grammar.lark
++++ b/ark/tools/parser/ark_grammar.lark
+@@ -27,6 +27,28 @@ item: abstraction_def
+     | hook_def
+     | rule_def
+     | template_def
++    | evolution_target_def
++    | eval_dataset_def
++    | fitness_function_def
++    | optimizer_def
++    | benchmark_gate_def
++    | evolution_run_def
++    | constraint_def
++    | agent_def
++    | platform_def
++    | gateway_def
++    | execution_backend_def
++    | skill_def
++    | learning_config_def
++    | cron_task_def
++    | model_config_def
++    | diagram_def
++    | preview_def
++    | annotation_def
++    | visual_review_def
++    | screenshot_def
++    | visual_search_def
++    | render_config_def
+ 
+ // ============================================================
+ // FOUR PRIMITIVES
+@@ -351,6 +373,337 @@ sections_stmt: "sections:" "[" string_list "]"
+ bound_to_stmt: "bound_to:" IDENT
+ string_list: STRING ("," STRING)*
+ 
++// ============================================================
++// EVOLUTION SYSTEM
++// ============================================================
++
++// 1. evolution_target_def — model or artifact to be evolved
++evolution_target_def: "evolution_target" IDENT "{" evolution_target_body "}"
++evolution_target_body: evolution_target_member*
++evolution_target_member: tier_stmt
++                       | file_ref_stmt
++                       | constraints_block
++                       | description_stmt
++                       | data_field
++
++file_ref_stmt: "file_ref:" STRING
++constraints_block: "constraints" "{" constraint_item* "}"
++constraint_item: constraint_item_member*
++constraint_item_member: name_stmt
++                      | type_stmt
++                      | threshold_stmt
++                      | enforcement_stmt
++
++name_stmt: "name:" STRING
++type_stmt: "type:" IDENT
++threshold_stmt: "threshold:" expr
++enforcement_stmt: "enforcement:" IDENT
++
++// 2. eval_dataset_def — dataset used to evaluate evolved artifacts
++eval_dataset_def: "eval_dataset" IDENT "{" eval_dataset_body "}"
++eval_dataset_body: eval_dataset_member*
++eval_dataset_member: source_stmt
++                   | split_stmt
++                   | scoring_rubric_stmt
++                   | description_stmt
++                   | data_field
++
++source_stmt: "source:" STRING
++split_stmt: "split:" "{" split_entry ("," split_entry)* ","? "}"
++split_entry: IDENT ":" NUMBER
++scoring_rubric_stmt: "scoring_rubric:" STRING
++
++// 3. fitness_function_def — multi-dimensional scoring function
++fitness_function_def: "fitness_function" IDENT "{" fitness_function_body "}"
++fitness_function_body: fitness_function_member*
++fitness_function_member: dimension_stmt
++                       | aggregation_stmt
++                       | description_stmt
++                       | data_field
++
++dimension_stmt: "dimension" IDENT "{" dimension_body "}"
++dimension_body: dimension_member*
++dimension_member: weight_stmt
++                | metric_stmt
++dimension_body_empty: dimension_member*
++weight_stmt: "weight:" NUMBER
++metric_stmt: "metric:" STRING
++aggregation_stmt: "aggregation:" IDENT
++
++// 4. optimizer_def — search/optimization engine configuration
++optimizer_def: "optimizer" IDENT "{" optimizer_body "}"
++optimizer_body: optimizer_member*
++optimizer_member: engine_stmt
++                | iterations_stmt
++                | population_stmt
++                | mutation_stmt
++                | description_stmt
++                | data_field
++
++engine_stmt: "engine:" IDENT
++iterations_stmt: "iterations:" NUMBER
++population_stmt: "population_size:" NUMBER
++mutation_stmt: "mutation_strategy:" IDENT
++
++// 5. benchmark_gate_def — pass/fail gate for a benchmark
++benchmark_gate_def: "benchmark_gate" IDENT "{" benchmark_gate_body "}"
++benchmark_gate_body: benchmark_gate_member*
++benchmark_gate_member: benchmark_stmt
++                     | tolerance_stmt
++                     | pass_criteria_stmt
++                     | description_stmt
++                     | data_field
++
++benchmark_stmt: "benchmark:" STRING
++tolerance_stmt: "tolerance:" NUMBER
++pass_criteria_stmt: "pass_criteria:" STRING
++
++// 6. evolution_run_def — a complete evolution experiment record
++evolution_run_def: "evolution_run" IDENT "{" evolution_run_body "}"
++evolution_run_body: evolution_run_member*
++evolution_run_member: target_ref_stmt
++                    | optimizer_ref_stmt
++                    | dataset_ref_stmt
++                    | gate_ref_stmt
++                    | status_stmt
++                    | description_stmt
++                    | data_field
++
++target_ref_stmt: "target:" IDENT
++optimizer_ref_stmt: "optimizer:" IDENT
++dataset_ref_stmt: "dataset:" IDENT
++gate_ref_stmt: "gate:" IDENT
++status_stmt: "status:" IDENT
++
++// 7. constraint_def — reusable named constraint
++constraint_def: "constraint" IDENT "{" constraint_def_body "}"
++constraint_def_body: constraint_def_member*
++constraint_def_member: type_stmt
++                     | threshold_stmt
++                     | enforcement_stmt
++                     | description_stmt
++                     | data_field
++
++// ============================================================
++// AGENT SYSTEM
++// ============================================================
++
++// 1. agent_def — autonomous agent with persona, model, capabilities, learning
++agent_def: "agent" IDENT "{" agent_body "}"
++agent_body: agent_member*
++agent_member: persona_stmt
++            | model_ref_stmt
++            | capabilities_stmt
++            | learning_ref_stmt
++            | backends_stmt
++            | data_field
++            | description_stmt
++            | in_port
++            | out_port
++            | process_rule
++
++persona_stmt: "persona:" STRING
++model_ref_stmt: "model:" IDENT
++capabilities_stmt: "capabilities:" "[" ident_list "]"
++learning_ref_stmt: "learning:" IDENT
++backends_stmt: "backends:" "[" ident_list "]"
++
++// 2. platform_def — messaging platform endpoint (terminal, telegram, discord, etc.)
++platform_def: "platform" IDENT "{" platform_body "}"
++platform_body: platform_member*
++platform_member: type_stmt
++               | auth_stmt
++               | format_stmt
++               | endpoint_stmt
++               | data_field
++               | description_stmt
++
++auth_stmt: "auth:" STRING
++format_stmt: "format:" IDENT
++endpoint_stmt: "endpoint:" STRING
++
++// 3. gateway_def — unified messaging gateway binding agent to platforms
++gateway_def: "gateway" IDENT "{" gateway_body "}"
++gateway_body: gateway_member*
++gateway_member: agent_ref_stmt
++              | platforms_stmt
++              | routes_stmt
++              | data_field
++              | description_stmt
++              | in_port
++              | out_port
++              | process_rule
++
++agent_ref_stmt: "agent:" IDENT
++platforms_stmt: "platforms:" "[" ident_list "]"
++routes_stmt: "routes:" "[" route_entry ("," route_entry)* "]"
++route_entry: IDENT "->" IDENT
++
++// 4. execution_backend_def — runtime environment with resource limits
++execution_backend_def: "execution_backend" IDENT "{" exec_backend_body "}"
++exec_backend_body: exec_backend_member*
++exec_backend_member: backend_type_stmt
++                   | connection_stmt
++                   | limits_stmt
++                   | data_field
++                   | description_stmt
++
++backend_type_stmt: "backend_type:" IDENT
++connection_stmt: "connection:" STRING
++limits_stmt: "limits:" "{" limit_entry ("," limit_entry)* "}"
++limit_entry: IDENT ":" expr
++
++// 5. skill_def — procedural knowledge unit with trigger and steps
++skill_def: "skill" IDENT "{" skill_body "}"
++skill_body: skill_member*
++skill_member: trigger_stmt
++            | steps_stmt
++            | status_stmt
++            | improvement_stmt
++            | data_field
++            | description_stmt
++
++trigger_stmt: "trigger:" STRING
++steps_stmt: "steps:" "[" string_list "]"
++improvement_stmt: "improvement:" "{" meta_pair_list "}"
++
++// 6. learning_config_def — settings for skill generation and self-improvement
++learning_config_def: "learning_config" IDENT "{" learning_body "}"
++learning_body: learning_member*
++learning_member: mode_stmt
++               | skill_gen_stmt
++               | memory_persist_stmt
++               | session_search_stmt
++               | self_improve_stmt
++               | data_field
++               | description_stmt
++
++mode_stmt: "mode:" IDENT
++skill_gen_stmt: "skill_generation:" expr
++memory_persist_stmt: "memory_persist:" expr
++session_search_stmt: "session_search:" expr
++self_improve_stmt: "self_improve:" expr
++
++// 7. cron_task_def — scheduled automation with platform delivery
++cron_task_def: "cron_task" IDENT "{" cron_body "}"
++cron_body: cron_member*
++cron_member: schedule_stmt
++           | agent_ref_stmt
++           | platform_delivery_stmt
++           | action_stmt
++           | data_field
++           | description_stmt
++
++schedule_stmt: "schedule:" STRING
++platform_delivery_stmt: "deliver_to:" IDENT
++
++// 8. model_config_def — LLM provider configuration with fallback chain
++model_config_def: "model_config" IDENT "{" model_config_body "}"
++model_config_body: model_config_member*
++model_config_member: provider_stmt
++                   | model_id_stmt
++                   | fallback_stmt
++                   | params_stmt
++                   | cost_limit_stmt
++                   | data_field
++                   | description_stmt
++
++provider_stmt: "provider:" IDENT
++model_id_stmt: "model_id:" STRING
++fallback_stmt: "fallback:" IDENT
++params_stmt: "params:" "{" meta_pair_list "}"
++cost_limit_stmt: "cost_limit:" expr
++
++// ============================================================
++// VISUAL COMMUNICATION LAYER
++// ============================================================
++
++// 7. diagram_def — named visual artifact
++diagram_def: "diagram" IDENT "{" diagram_body "}"
++diagram_body: diagram_member*
++diagram_member: diagram_type_stmt
++              | source_stmt
++              | render_config_stmt
++              | description_stmt
++              | data_field
++
++diagram_type_stmt: "type:" IDENT
++render_config_stmt: "render:" IDENT
++
++// 8. preview_def — HTML component preview
++preview_def: "preview" IDENT "{" preview_body "}"
++preview_body: preview_member*
++preview_member: source_stmt
++              | viewport_stmt
++              | mode_stmt
++              | render_config_stmt
++              | description_stmt
++              | data_field
++
++viewport_stmt: "viewport:" IDENT
++
++// 9. annotation_def — markup layer on image
++annotation_def: "annotation" IDENT "{" annotation_body "}"
++annotation_body: annotation_member*
++annotation_member: target_ref_stmt
++                 | element_stmt
++                 | description_stmt
++                 | data_field
++
++element_stmt: "element:" IDENT "(" meta_pair_list ")"
++
++// 10. visual_review_def — review cycle
++visual_review_def: "visual_review" IDENT "{" visual_review_body "}"
++visual_review_body: visual_review_member*
++visual_review_member: target_ref_stmt
++                    | render_config_stmt
++                    | feedback_mode_stmt
++                    | description_stmt
++                    | data_field
++
++feedback_mode_stmt: "feedback_mode:" IDENT
++
++// 11. screenshot_def — captured image with metadata
++screenshot_def: "screenshot" IDENT "{" screenshot_body "}"
++screenshot_body: screenshot_member*
++screenshot_member: path_stmt
++                 | source_stmt
++                 | tags_stmt
++                 | description_stmt
++                 | data_field
++
++tags_stmt: "tags:" "[" ident_list "]"
++
++// 12. visual_search_def — semantic search query
++visual_search_def: "visual_search" IDENT "{" visual_search_body "}"
++visual_search_body: visual_search_member*
++visual_search_member: search_mode_stmt
++                    | query_stmt
++                    | tags_stmt
++                    | max_results_stmt
++                    | description_stmt
++                    | data_field
++
++search_mode_stmt: "search_mode:" IDENT
++query_stmt: "query:" STRING
++max_results_stmt: "max_results:" NUMBER
++
++// 13. render_config_def — output configuration
++render_config_def: "render_config" IDENT "{" render_config_body "}"
++render_config_body: render_config_member*
++render_config_member: format_stmt
++                    | width_stmt
++                    | height_stmt
++                    | theme_stmt
++                    | scale_stmt
++                    | description_stmt
++                    | data_field
++
++width_stmt: "width:" NUMBER
++height_stmt: "height:" NUMBER
++theme_stmt: "theme:" STRING
++scale_stmt: "scale:" NUMBER
++
+ // ============================================================
+ // TERMINALS
+ // ============================================================
+diff --git a/ark/tools/parser/ark_parser.py b/ark/tools/parser/ark_parser.py
+index ba5f6fb..790dede 100644
+--- a/ark/tools/parser/ark_parser.py
++++ b/ark/tools/parser/ark_parser.py
+@@ -344,6 +344,254 @@ class TemplateDef:
+     data_fields: list = field(default_factory=list)
+     description: Optional[str] = None
+ 
++# ============================================================
++# EVOLUTION SYSTEM DATACLASSES
++# ============================================================
++
++@dataclass
++class EvolutionTargetDef:
++    kind: str = "evolution_target"
++    name: str = ""
++    tier: Optional[str] = None
++    file_ref: Optional[str] = None
++    constraints: list = field(default_factory=list)  # list of dicts from constraints_block
++    data_fields: list = field(default_factory=list)
++    description: Optional[str] = None
++
++@dataclass
++class EvalDatasetDef:
++    kind: str = "eval_dataset"
++    name: str = ""
++    source: Optional[str] = None
++    splits: dict = field(default_factory=dict)        # {split_name: ratio}
++    scoring_rubric: Optional[str] = None
++    data_fields: list = field(default_factory=list)
++    description: Optional[str] = None
++
++@dataclass
++class FitnessFunctionDef:
++    kind: str = "fitness_function"
++    name: str = ""
++    dimensions: list = field(default_factory=list)    # list of dicts {name, weight, metric}
++    aggregation: Optional[str] = None
++    data_fields: list = field(default_factory=list)
++    description: Optional[str] = None
++
++@dataclass
++class OptimizerDef:
++    kind: str = "optimizer"
++    name: str = ""
++    engine: Optional[str] = None
++    iterations: Optional[int] = None
++    population_size: Optional[int] = None
++    mutation_strategy: Optional[str] = None
++    data_fields: list = field(default_factory=list)
++    description: Optional[str] = None
++
++@dataclass
++class BenchmarkGateDef:
++    kind: str = "benchmark_gate"
++    name: str = ""
++    benchmark: Optional[str] = None
++    tolerance: Optional[float] = None
++    pass_criteria: Optional[str] = None
++    data_fields: list = field(default_factory=list)
++    description: Optional[str] = None
++
++@dataclass
++class EvolutionRunDef:
++    kind: str = "evolution_run"
++    name: str = ""
++    target_ref: Optional[str] = None
++    optimizer_ref: Optional[str] = None
++    dataset_ref: Optional[str] = None
++    gate_ref: Optional[str] = None
++    status: Optional[str] = None
++    data_fields: list = field(default_factory=list)
++    description: Optional[str] = None
++
++@dataclass
++class EvolutionConstraintDef:
++    kind: str = "evolution_constraint"
++    name: str = ""
++    type: Optional[str] = None
++    threshold: Optional[dict] = None   # expr dict from threshold_stmt
++    enforcement: Optional[str] = None
++    data_fields: list = field(default_factory=list)
++    description: Optional[str] = None
++
++# ============================================================
++# AGENT SYSTEM DATACLASSES
++# ============================================================
++
++@dataclass
++class AgentDef:
++    kind: str = "agent"
++    name: str = ""
++    persona: Optional[str] = None
++    model_ref: Optional[str] = None
++    capabilities: list = field(default_factory=list)
++    learning_ref: Optional[str] = None
++    backends: list = field(default_factory=list)
++    data_fields: list = field(default_factory=list)
++    description: Optional[str] = None
++
++@dataclass
++class PlatformDef:
++    kind: str = "platform"
++    name: str = ""
++    type: Optional[str] = None
++    auth: Optional[str] = None
++    format: Optional[str] = None
++    endpoint: Optional[str] = None
++    data_fields: list = field(default_factory=list)
++    description: Optional[str] = None
++
++@dataclass
++class GatewayDef:
++    kind: str = "gateway"
++    name: str = ""
++    agent_ref: Optional[str] = None
++    platforms: list = field(default_factory=list)
++    routes: list = field(default_factory=list)   # list of dicts {from, to}
++    data_fields: list = field(default_factory=list)
++    description: Optional[str] = None
++
++@dataclass
++class ExecutionBackendDef:
++    kind: str = "execution_backend"
++    name: str = ""
++    backend_type: Optional[str] = None
++    connection: Optional[str] = None
++    limits: dict = field(default_factory=dict)
++    data_fields: list = field(default_factory=list)
++    description: Optional[str] = None
++
++@dataclass
++class AgentSkillDef:
++    kind: str = "skill"
++    name: str = ""
++    trigger: Optional[str] = None
++    steps: list = field(default_factory=list)
++    status: Optional[str] = None
++    improvement_history: list = field(default_factory=list)
++    data_fields: list = field(default_factory=list)
++    description: Optional[str] = None
++
++@dataclass
++class LearningConfigDef:
++    kind: str = "learning_config"
++    name: str = ""
++    mode: Optional[str] = None
++    skill_gen: Optional[dict] = None
++    memory_persist: Optional[dict] = None
++    session_search: Optional[dict] = None
++    self_improve: Optional[dict] = None
++    data_fields: list = field(default_factory=list)
++    description: Optional[str] = None
++
++@dataclass
++class CronTaskDef:
++    kind: str = "cron_task"
++    name: str = ""
++    schedule: Optional[str] = None
++    agent_ref: Optional[str] = None
++    platform_delivery: Optional[str] = None
++    action: Optional[str] = None
++    data_fields: list = field(default_factory=list)
++    description: Optional[str] = None
++
++@dataclass
++class ModelConfigDef:
++    kind: str = "model_config"
++    name: str = ""
++    provider: Optional[str] = None
++    model_id: Optional[str] = None
++    fallback: Optional[str] = None
++    params: dict = field(default_factory=dict)
++    cost_limit: Optional[dict] = None
++    data_fields: list = field(default_factory=list)
++    description: Optional[str] = None
++
++
++# ============================================================
++# VISUAL COMMUNICATION LAYER DATACLASSES
++# ============================================================
++
++@dataclass
++class DiagramDef:
++    kind: str = "diagram"
++    name: str = ""
++    diagram_type: Optional[str] = None
++    source: Optional[str] = None
++    render_config: Optional[str] = None
++    description: Optional[str] = None
++    data_fields: list = field(default_factory=list)
++
++@dataclass
++class PreviewDef:
++    kind: str = "preview"
++    name: str = ""
++    source: Optional[str] = None
++    viewport: Optional[str] = None
++    mode: Optional[str] = None
++    render_config: Optional[str] = None
++    description: Optional[str] = None
++    data_fields: list = field(default_factory=list)
++
++@dataclass
++class AnnotationDef:
++    kind: str = "annotation"
++    name: str = ""
++    target: Optional[str] = None
++    elements: list = field(default_factory=list)
++    description: Optional[str] = None
++    data_fields: list = field(default_factory=list)
++
++@dataclass
++class VisualReviewDef:
++    kind: str = "visual_review"
++    name: str = ""
++    target: Optional[str] = None
++    render_config: Optional[str] = None
++    feedback_mode: Optional[str] = None
++    description: Optional[str] = None
++    data_fields: list = field(default_factory=list)
++
++@dataclass
++class ScreenshotDef:
++    kind: str = "screenshot"
++    name: str = ""
++    path: Optional[str] = None
++    source: Optional[str] = None
++    tags: list = field(default_factory=list)
++    description: Optional[str] = None
++    data_fields: list = field(default_factory=list)
++
++@dataclass
++class VisualSearchDef:
++    kind: str = "visual_search"
++    name: str = ""
++    search_mode: Optional[str] = None
++    query: Optional[str] = None
++    tags: list = field(default_factory=list)
++    max_results: Optional[int] = None
++    description: Optional[str] = None
++    data_fields: list = field(default_factory=list)
++
++@dataclass
++class RenderConfigDef:
++    kind: str = "render_config"
++    name: str = ""
++    format: Optional[str] = None
++    width: Optional[int] = None
++    height: Optional[int] = None
++    theme: Optional[str] = None
++    scale: Optional[float] = None
++    description: Optional[str] = None
++    data_fields: list = field(default_factory=list)
++
++
+ @dataclass
+ class PipeStage:
+     name: str = ""          # kebab-case allowed, e.g. "text-to-lower"
+@@ -370,6 +618,31 @@ class ArkFile:
+     roles: dict = field(default_factory=dict)             # name -> RoleDef
+     studios: dict = field(default_factory=dict)           # name -> StudioDef
+     commands: dict = field(default_factory=dict)          # name -> CommandDef
++    # Evolution system indices: name -> definition dataclass.
++    evolution_targets: dict = field(default_factory=dict)   # name -> EvolutionTargetDef
++    eval_datasets: dict = field(default_factory=dict)       # name -> EvalDatasetDef
++    fitness_functions: dict = field(default_factory=dict)   # name -> FitnessFunctionDef
++    optimizers: dict = field(default_factory=dict)          # name -> OptimizerDef
++    benchmark_gates: dict = field(default_factory=dict)     # name -> BenchmarkGateDef
++    evolution_runs: dict = field(default_factory=dict)      # name -> EvolutionRunDef
++    evolution_constraints: dict = field(default_factory=dict)  # name -> EvolutionConstraintDef
++    # Agent system indices: name -> definition dataclass.
++    agents: dict = field(default_factory=dict)               # name -> AgentDef
++    platforms: dict = field(default_factory=dict)            # name -> PlatformDef
++    gateways: dict = field(default_factory=dict)             # name -> GatewayDef
++    execution_backends: dict = field(default_factory=dict)   # name -> ExecutionBackendDef
++    agent_skills: dict = field(default_factory=dict)         # name -> AgentSkillDef
++    learning_configs: dict = field(default_factory=dict)     # name -> LearningConfigDef
++    cron_tasks: dict = field(default_factory=dict)           # name -> CronTaskDef
++    model_configs: dict = field(default_factory=dict)        # name -> ModelConfigDef
++    # Visual communication layer indices: name -> definition dataclass.
++    diagrams: dict = field(default_factory=dict)             # name -> DiagramDef
++    previews: dict = field(default_factory=dict)             # name -> PreviewDef
++    annotations: dict = field(default_factory=dict)          # name -> AnnotationDef
++    visual_reviews: dict = field(default_factory=dict)       # name -> VisualReviewDef
++    screenshots: dict = field(default_factory=dict)          # name -> ScreenshotDef
++    visual_searches: dict = field(default_factory=dict)      # name -> VisualSearchDef
++    render_configs: dict = field(default_factory=dict)       # name -> RenderConfigDef
+ 
+     def instances_of(self, class_name: str) -> list:
+         """Return the list of instances declared for `class_name`, or []."""
+@@ -1210,6 +1483,901 @@ class ArkTransformer(Transformer):
+                     tmpl.description = item["value"]
+         return tmpl
+ 
++    # --- Evolution system ---
++
++    # Shared helper statements used across evolution grammar rules
++    # NOTE: tier_stmt is already defined above for role_def and is reused here.
++
++    def file_ref_stmt(self, items):
++        return {"_stmt": "file_ref", "value": items[0]}
++
++    def source_stmt(self, items):
++        return {"_stmt": "source", "value": items[0]}
++
++    def split_entry(self, items):
++        return (str(items[0]), items[1])
++
++    def split_stmt(self, items):
++        # items is a flat list of (name, value) tuples
++        splits = {}
++        for entry in items:
++            if isinstance(entry, tuple):
++                splits[entry[0]] = entry[1]
++        return {"_stmt": "split", "value": splits}
++
++    def scoring_rubric_stmt(self, items):
++        return {"_stmt": "scoring_rubric", "value": items[0]}
++
++    def aggregation_stmt(self, items):
++        return {"_stmt": "aggregation", "value": str(items[0])}
++
++    def weight_stmt(self, items):
++        return {"_stmt": "weight", "value": items[0]}
++
++    def metric_stmt(self, items):
++        return {"_stmt": "metric", "value": items[0]}
++
++    def dimension_body(self, items):
++        return list(items)
++
++    def dimension_body_empty(self, items):
++        return list(items)
++
++    def dimension_member(self, items):
++        return items[0]
++
++    def dimension_stmt(self, items):
++        dim_name = str(items[0])
++        members = items[1] if len(items) > 1 else []
++        dim = {"name": dim_name, "weight": None, "metric": None}
++        for item in members:
++            if isinstance(item, dict):
++                s = item.get("_stmt")
++                if s == "weight":
++                    dim["weight"] = item["value"]
++                elif s == "metric":
++                    dim["metric"] = item["value"]
++        return {"_stmt": "dimension", "value": dim}
++
++    def engine_stmt(self, items):
++        return {"_stmt": "engine", "value": str(items[0])}
++
++    def iterations_stmt(self, items):
++        return {"_stmt": "iterations", "value": items[0]}
++
++    def population_stmt(self, items):
++        return {"_stmt": "population_size", "value": items[0]}
++
++    def mutation_stmt(self, items):
++        return {"_stmt": "mutation_strategy", "value": str(items[0])}
++
++    def benchmark_stmt(self, items):
++        return {"_stmt": "benchmark", "value": items[0]}
++
++    def tolerance_stmt(self, items):
++        return {"_stmt": "tolerance", "value": items[0]}
++
++    def pass_criteria_stmt(self, items):
++        return {"_stmt": "pass_criteria", "value": items[0]}
++
++    def target_ref_stmt(self, items):
++        return {"_stmt": "target_ref", "value": str(items[0])}
++
++    def optimizer_ref_stmt(self, items):
++        return {"_stmt": "optimizer_ref", "value": str(items[0])}
++
++    def dataset_ref_stmt(self, items):
++        return {"_stmt": "dataset_ref", "value": str(items[0])}
++
++    def gate_ref_stmt(self, items):
++        return {"_stmt": "gate_ref", "value": str(items[0])}
++
++    def status_stmt(self, items):
++        return {"_stmt": "status", "value": str(items[0])}
++
++    def type_stmt(self, items):
++        return {"_stmt": "type", "value": str(items[0])}
++
++    def threshold_stmt(self, items):
++        return {"_stmt": "threshold", "value": items[0]}
++
++    def enforcement_stmt(self, items):
++        return {"_stmt": "enforcement", "value": str(items[0])}
++
++    def name_stmt(self, items):
++        return {"_stmt": "name", "value": items[0]}
++
++    def constraint_item_member(self, items):
++        return items[0]
++
++    def constraint_item(self, items):
++        """Collect inline constraint members into a dict."""
++        c = {"name": None, "type": None, "threshold": None, "enforcement": None}
++        for item in items:
++            if isinstance(item, dict):
++                s = item.get("_stmt")
++                if s == "name":
++                    c["name"] = item["value"]
++                elif s == "type":
++                    c["type"] = item["value"]
++                elif s == "threshold":
++                    c["threshold"] = item["value"]
++                elif s == "enforcement":
++                    c["enforcement"] = item["value"]
++        return c
++
++    def constraints_block(self, items):
++        return {"_stmt": "constraints_block", "value": list(items)}
++
++    # evolution_target_def
++
++    def evolution_target_body(self, items):
++        return list(items)
++
++    def evolution_target_member(self, items):
++        return items[0]
++
++    def evolution_target_def(self, items):
++        name = str(items[0])
++        members = items[1] if len(items) > 1 else []
++        et = EvolutionTargetDef(name=name)
++        for item in members:
++            if isinstance(item, DataField):
++                et.data_fields.append(item)
++            elif isinstance(item, dict):
++                s = item.get("_stmt")
++                if s == "tier":
++                    val = item["value"]
++                    if isinstance(val, (int, float)):
++                        et.tier = str(int(val))
++                    elif isinstance(val, dict) and val.get("expr") == "ident":
++                        et.tier = val["name"]
++                    else:
++                        et.tier = str(val)
++                elif s == "file_ref":
++                    et.file_ref = item["value"]
++                elif s == "constraints_block":
++                    et.constraints = item["value"]
++                elif s == "description":
++                    et.description = item["value"]
++        return et
++
++    # eval_dataset_def
++
++    def eval_dataset_body(self, items):
++        return list(items)
++
++    def eval_dataset_member(self, items):
++        return items[0]
++
++    def eval_dataset_def(self, items):
++        name = str(items[0])
++        members = items[1] if len(items) > 1 else []
++        ed = EvalDatasetDef(name=name)
++        for item in members:
++            if isinstance(item, DataField):
++                ed.data_fields.append(item)
++            elif isinstance(item, dict):
++                s = item.get("_stmt")
++                if s == "source":
++                    ed.source = item["value"]
++                elif s == "split":
++                    ed.splits = item["value"]
++                elif s == "scoring_rubric":
++                    ed.scoring_rubric = item["value"]
++                elif s == "description":
++                    ed.description = item["value"]
++        return ed
++
++    # fitness_function_def
++
++    def fitness_function_body(self, items):
++        return list(items)
++
++    def fitness_function_member(self, items):
++        return items[0]
++
++    def fitness_function_def(self, items):
++        name = str(items[0])
++        members = items[1] if len(items) > 1 else []
++        ff = FitnessFunctionDef(name=name)
++        for item in members:
++            if isinstance(item, DataField):
++                ff.data_fields.append(item)
++            elif isinstance(item, dict):
++                s = item.get("_stmt")
++                if s == "dimension":
++                    ff.dimensions.append(item["value"])
++                elif s == "aggregation":
++                    ff.aggregation = item["value"]
++                elif s == "description":
++                    ff.description = item["value"]
++        return ff
++
++    # optimizer_def
++
++    def optimizer_body(self, items):
++        return list(items)
++
++    def optimizer_member(self, items):
++        return items[0]
++
++    def optimizer_def(self, items):
++        name = str(items[0])
++        members = items[1] if len(items) > 1 else []
++        opt = OptimizerDef(name=name)
++        for item in members:
++            if isinstance(item, DataField):
++                opt.data_fields.append(item)
++            elif isinstance(item, dict):
++                s = item.get("_stmt")
++                if s == "engine":
++                    opt.engine = item["value"]
++                elif s == "iterations":
++                    val = item["value"]
++                    opt.iterations = int(val) if isinstance(val, (int, float)) else val
++                elif s == "population_size":
++                    val = item["value"]
++                    opt.population_size = int(val) if isinstance(val, (int, float)) else val
++                elif s == "mutation_strategy":
++                    opt.mutation_strategy = item["value"]
++                elif s == "description":
++                    opt.description = item["value"]
++        return opt
++
++    # benchmark_gate_def
++
++    def benchmark_gate_body(self, items):
++        return list(items)
++
++    def benchmark_gate_member(self, items):
++        return items[0]
++
++    def benchmark_gate_def(self, items):
++        name = str(items[0])
++        members = items[1] if len(items) > 1 else []
++        bg = BenchmarkGateDef(name=name)
++        for item in members:
++            if isinstance(item, DataField):
++                bg.data_fields.append(item)
++            elif isinstance(item, dict):
++                s = item.get("_stmt")
++                if s == "benchmark":
++                    bg.benchmark = item["value"]
++                elif s == "tolerance":
++                    val = item["value"]
++                    bg.tolerance = float(val) if isinstance(val, (int, float)) else val
++                elif s == "pass_criteria":
++                    bg.pass_criteria = item["value"]
++                elif s == "description":
++                    bg.description = item["value"]
++        return bg
++
++    # evolution_run_def
++
++    def evolution_run_body(self, items):
++        return list(items)
++
++    def evolution_run_member(self, items):
++        return items[0]
++
++    def evolution_run_def(self, items):
++        name = str(items[0])
++        members = items[1] if len(items) > 1 else []
++        er = EvolutionRunDef(name=name)
++        for item in members:
++            if isinstance(item, DataField):
++                er.data_fields.append(item)
++            elif isinstance(item, dict):
++                s = item.get("_stmt")
++                if s == "target_ref":
++                    er.target_ref = item["value"]
++                elif s == "optimizer_ref":
++                    er.optimizer_ref = item["value"]
++                elif s == "dataset_ref":
++                    er.dataset_ref = item["value"]
++                elif s == "gate_ref":
++                    er.gate_ref = item["value"]
++                elif s == "status":
++                    er.status = item["value"]
++                elif s == "description":
++                    er.description = item["value"]
++        return er
++
++    # constraint_def (reusable named constraint — EvolutionConstraintDef)
++
++    def constraint_def_body(self, items):
++        return list(items)
++
++    def constraint_def_member(self, items):
++        return items[0]
++
++    def constraint_def(self, items):
++        name = str(items[0])
++        members = items[1] if len(items) > 1 else []
++        cd = EvolutionConstraintDef(name=name)
++        for item in members:
++            if isinstance(item, DataField):
++                cd.data_fields.append(item)
++            elif isinstance(item, dict):
++                s = item.get("_stmt")
++                if s == "type":
++                    cd.type = item["value"]
++                elif s == "threshold":
++                    cd.threshold = item["value"]
++                elif s == "enforcement":
++                    cd.enforcement = item["value"]
++                elif s == "description":
++                    cd.description = item["value"]
++        return cd
++
++    # --- Agent system ---
++
++    # agent_def
++    def agent_body(self, items):
++        return list(items)
++
++    def agent_member(self, items):
++        return items[0]
++
++    def persona_stmt(self, items):
++        return {"_stmt": "persona", "value": items[0]}
++
++    def model_ref_stmt(self, items):
++        return {"_stmt": "model_ref", "value": str(items[0])}
++
++    def capabilities_stmt(self, items):
++        return {"_stmt": "capabilities", "value": items[0]}
++
++    def learning_ref_stmt(self, items):
++        return {"_stmt": "learning_ref", "value": str(items[0])}
++
++    def backends_stmt(self, items):
++        return {"_stmt": "backends", "value": items[0]}
++
++    def agent_def(self, items):
++        name = str(items[0])
++        members = items[1] if len(items) > 1 else []
++        ag = AgentDef(name=name)
++        for item in members:
++            if isinstance(item, DataField):
++                ag.data_fields.append(item)
++            elif isinstance(item, dict):
++                s = item.get("_stmt")
++                if s == "persona":
++                    ag.persona = item["value"]
++                elif s == "model_ref":
++                    ag.model_ref = item["value"]
++                elif s == "capabilities":
++                    ag.capabilities = item["value"]
++                elif s == "learning_ref":
++                    ag.learning_ref = item["value"]
++                elif s == "backends":
++                    ag.backends = item["value"]
++                elif s == "description":
++                    ag.description = item["value"]
++        return ag
++
++    # platform_def
++    def platform_body(self, items):
++        return list(items)
++
++    def platform_member(self, items):
++        return items[0]
++
++    def auth_stmt(self, items):
++        return {"_stmt": "auth", "value": items[0]}
++
++    def format_stmt(self, items):
++        return {"_stmt": "format", "value": str(items[0])}
++
++    def endpoint_stmt(self, items):
++        return {"_stmt": "endpoint", "value": items[0]}
++
++    def platform_def(self, items):
++        name = str(items[0])
++        members = items[1] if len(items) > 1 else []
++        pl = PlatformDef(name=name)
++        for item in members:
++            if isinstance(item, DataField):
++                pl.data_fields.append(item)
++            elif isinstance(item, dict):
++                s = item.get("_stmt")
++                if s == "type":
++                    pl.type = item["value"]
++                elif s == "auth":
++                    pl.auth = item["value"]
++                elif s == "format":
++                    pl.format = item["value"]
++                elif s == "endpoint":
++                    pl.endpoint = item["value"]
++                elif s == "description":
++                    pl.description = item["value"]
++        return pl
++
++    # gateway_def
++    def gateway_body(self, items):
++        return list(items)
++
++    def gateway_member(self, items):
++        return items[0]
++
++    def agent_ref_stmt(self, items):
++        return {"_stmt": "agent_ref", "value": str(items[0])}
++
++    def platforms_stmt(self, items):
++        return {"_stmt": "platforms", "value": items[0]}
++
++    def route_entry(self, items):
++        return {"from": str(items[0]), "to": str(items[1])}
++
++    def routes_stmt(self, items):
++        return {"_stmt": "routes", "value": list(items)}
++
++    def gateway_def(self, items):
++        name = str(items[0])
++        members = items[1] if len(items) > 1 else []
++        gw = GatewayDef(name=name)
++        for item in members:
++            if isinstance(item, DataField):
++                gw.data_fields.append(item)
++            elif isinstance(item, dict):
++                s = item.get("_stmt")
++                if s == "agent_ref":
++                    gw.agent_ref = item["value"]
++                elif s == "platforms":
++                    gw.platforms = item["value"]
++                elif s == "routes":
++                    gw.routes = item["value"]
++                elif s == "description":
++                    gw.description = item["value"]
++        return gw
++
++    # execution_backend_def
++    def exec_backend_body(self, items):
++        return list(items)
++
++    def exec_backend_member(self, items):
++        return items[0]
++
++    def backend_type_stmt(self, items):
++        return {"_stmt": "backend_type", "value": str(items[0])}
++
++    def connection_stmt(self, items):
++        return {"_stmt": "connection", "value": items[0]}
++
++    def limit_entry(self, items):
++        return (str(items[0]), items[1])
++
++    def limits_stmt(self, items):
++        limits = {}
++        for entry in items:
++            if isinstance(entry, tuple):
++                limits[entry[0]] = entry[1]
++        return {"_stmt": "limits", "value": limits}
++
++    def execution_backend_def(self, items):
++        name = str(items[0])
++        members = items[1] if len(items) > 1 else []
++        eb = ExecutionBackendDef(name=name)
++        for item in members:
++            if isinstance(item, DataField):
++                eb.data_fields.append(item)
++            elif isinstance(item, dict):
++                s = item.get("_stmt")
++                if s == "backend_type":
++                    eb.backend_type = item["value"]
++                elif s == "connection":
++                    eb.connection = item["value"]
++                elif s == "limits":
++                    eb.limits = item["value"]
++                elif s == "description":
++                    eb.description = item["value"]
++        return eb
++
++    # skill_def
++    def skill_body(self, items):
++        return list(items)
++
++    def skill_member(self, items):
++        return items[0]
++
++    def trigger_stmt(self, items):
++        return {"_stmt": "trigger", "value": items[0]}
++
++    def steps_stmt(self, items):
++        return {"_stmt": "steps", "value": items[0]}
++
++    def improvement_stmt(self, items):
++        pairs = items[0] if items else []
++        return {"_stmt": "improvement", "value": pairs}
++
++    def skill_def(self, items):
++        name = str(items[0])
++        members = items[1] if len(items) > 1 else []
++        sk = AgentSkillDef(name=name)
++        for item in members:
++            if isinstance(item, DataField):
++                sk.data_fields.append(item)
++            elif isinstance(item, dict):
++                s = item.get("_stmt")
++                if s == "trigger":
++                    sk.trigger = item["value"]
++                elif s == "steps":
++                    sk.steps = item["value"]
++                elif s == "status":
++                    sk.status = item["value"]
++                elif s == "improvement":
++                    sk.improvement_history = item["value"]
++                elif s == "description":
++                    sk.description = item["value"]
++        return sk
++
++    # learning_config_def
++    def learning_body(self, items):
++        return list(items)
++
++    def learning_member(self, items):
++        return items[0]
++
++    def mode_stmt(self, items):
++        return {"_stmt": "mode", "value": str(items[0])}
++
++    def skill_gen_stmt(self, items):
++        return {"_stmt": "skill_gen", "value": items[0]}
++
++    def memory_persist_stmt(self, items):
++        return {"_stmt": "memory_persist", "value": items[0]}
++
++    def session_search_stmt(self, items):
++        return {"_stmt": "session_search", "value": items[0]}
++
++    def self_improve_stmt(self, items):
++        return {"_stmt": "self_improve", "value": items[0]}
++
++    def learning_config_def(self, items):
++        name = str(items[0])
++        members = items[1] if len(items) > 1 else []
++        lc = LearningConfigDef(name=name)
++        for item in members:
++            if isinstance(item, DataField):
++                lc.data_fields.append(item)
++            elif isinstance(item, dict):
++                s = item.get("_stmt")
++                if s == "mode":
++                    lc.mode = item["value"]
++                elif s == "skill_gen":
++                    lc.skill_gen = item["value"]
++                elif s == "memory_persist":
++                    lc.memory_persist = item["value"]
++                elif s == "session_search":
++                    lc.session_search = item["value"]
++                elif s == "self_improve":
++                    lc.self_improve = item["value"]
++                elif s == "description":
++                    lc.description = item["value"]
++        return lc
++
++    # cron_task_def
++    def cron_body(self, items):
++        return list(items)
++
++    def cron_member(self, items):
++        return items[0]
++
++    def schedule_stmt(self, items):
++        return {"_stmt": "schedule", "value": items[0]}
++
++    def platform_delivery_stmt(self, items):
++        return {"_stmt": "platform_delivery", "value": str(items[0])}
++
++    def cron_task_def(self, items):
++        name = str(items[0])
++        members = items[1] if len(items) > 1 else []
++        ct = CronTaskDef(name=name)
++        for item in members:
++            if isinstance(item, DataField):
++                ct.data_fields.append(item)
++            elif isinstance(item, dict):
++                s = item.get("_stmt")
++                if s == "schedule":
++                    ct.schedule = item["value"]
++                elif s == "agent_ref":
++                    ct.agent_ref = item["value"]
++                elif s == "platform_delivery":
++                    ct.platform_delivery = item["value"]
++                elif s == "action":
++                    ct.action = item["value"]
++                elif s == "description":
++                    ct.description = item["value"]
++        return ct
++
++    # model_config_def
++    def model_config_body(self, items):
++        return list(items)
++
++    def model_config_member(self, items):
++        return items[0]
++
++    def provider_stmt(self, items):
++        return {"_stmt": "provider", "value": str(items[0])}
++
++    def model_id_stmt(self, items):
++        return {"_stmt": "model_id", "value": items[0]}
++
++    def fallback_stmt(self, items):
++        return {"_stmt": "fallback", "value": str(items[0])}
++
++    def params_stmt(self, items):
++        pairs = items[0] if items else []
++        params = {}
++        if isinstance(pairs, list):
++            for p in pairs:
++                if isinstance(p, dict) and "key" in p:
++                    params[p["key"]] = p["value"]
++        return {"_stmt": "params", "value": params}
++
++    def cost_limit_stmt(self, items):
++        return {"_stmt": "cost_limit", "value": items[0]}
++
++    def model_config_def(self, items):
++        name = str(items[0])
++        members = items[1] if len(items) > 1 else []
++        mc = ModelConfigDef(name=name)
++        for item in members:
++            if isinstance(item, DataField):
++                mc.data_fields.append(item)
++            elif isinstance(item, dict):
++                s = item.get("_stmt")
++                if s == "provider":
++                    mc.provider = item["value"]
++                elif s == "model_id":
++                    mc.model_id = item["value"]
++                elif s == "fallback":
++                    mc.fallback = item["value"]
++                elif s == "params":
++                    mc.params = item["value"]
++                elif s == "cost_limit":
++                    mc.cost_limit = item["value"]
++                elif s == "description":
++                    mc.description = item["value"]
++        return mc
++
++    # --- Visual communication layer ---
++
++    # diagram_def
++    def diagram_body(self, items):
++        return list(items)
++
++    def diagram_member(self, items):
++        return items[0]
++
++    def diagram_type_stmt(self, items):
++        return {"_stmt": "diagram_type", "value": str(items[0])}
++
++    def render_config_stmt(self, items):
++        return {"_stmt": "render_config_ref", "value": str(items[0])}
++
++    def diagram_def(self, items):
++        name = str(items[0])
++        members = items[1] if len(items) > 1 else []
++        d = DiagramDef(name=name)
++        for item in members:
++            if isinstance(item, DataField):
++                d.data_fields.append(item)
++            elif isinstance(item, dict):
++                s = item.get("_stmt")
++                if s == "diagram_type":
++                    d.diagram_type = item["value"]
++                elif s == "source":
++                    d.source = item["value"]
++                elif s == "render_config_ref":
++                    d.render_config = item["value"]
++                elif s == "description":
++                    d.description = item["value"]
++        return d
++
++    # preview_def
++    def preview_body(self, items):
++        return list(items)
++
++    def preview_member(self, items):
++        return items[0]
++
++    def viewport_stmt(self, items):
++        return {"_stmt": "viewport", "value": str(items[0])}
++
++    def preview_def(self, items):
++        name = str(items[0])
++        members = items[1] if len(items) > 1 else []
++        p = PreviewDef(name=name)
++        for item in members:
++            if isinstance(item, DataField):
++                p.data_fields.append(item)
++            elif isinstance(item, dict):
++                s = item.get("_stmt")
++                if s == "source":
++                    p.source = item["value"]
++                elif s == "viewport":
++                    p.viewport = item["value"]
++                elif s == "mode":
++                    p.mode = item["value"]
++                elif s == "render_config_ref":
++                    p.render_config = item["value"]
++                elif s == "description":
++                    p.description = item["value"]
++        return p
++
++    # annotation_def
++    def annotation_body(self, items):
++        return list(items)
++
++    def annotation_member(self, items):
++        return items[0]
++
++    def element_stmt(self, items):
++        name = str(items[0])
++        meta = items[1] if len(items) > 1 else []
++        return {"_stmt": "element", "name": name, "meta": meta}
++
++    def annotation_def(self, items):
++        name = str(items[0])
++        members = items[1] if len(items) > 1 else []
++        a = AnnotationDef(name=name)
++        for item in members:
++            if isinstance(item, DataField):
++                a.data_fields.append(item)
++            elif isinstance(item, dict):
++                s = item.get("_stmt")
++                if s == "target_ref":
++                    a.target = item["value"]
++                elif s == "element":
++                    a.elements.append({"name": item["name"], "meta": item["meta"]})
++                elif s == "description":
++                    a.description = item["value"]
++        return a
++
++    # visual_review_def
++    def visual_review_body(self, items):
++        return list(items)
++
++    def visual_review_member(self, items):
++        return items[0]
++
++    def feedback_mode_stmt(self, items):
++        return {"_stmt": "feedback_mode", "value": str(items[0])}
++
++    def visual_review_def(self, items):
++        name = str(items[0])
++        members = items[1] if len(items) > 1 else []
++        vr = VisualReviewDef(name=name)
++        for item in members:
++            if isinstance(item, DataField):
++                vr.data_fields.append(item)
++            elif isinstance(item, dict):
++                s = item.get("_stmt")
++                if s == "target_ref":
++                    vr.target = item["value"]
++                elif s == "render_config_ref":
++                    vr.render_config = item["value"]
++                elif s == "feedback_mode":
++                    vr.feedback_mode = item["value"]
++                elif s == "description":
++                    vr.description = item["value"]
++        return vr
++
++    # screenshot_def
++    def screenshot_body(self, items):
++        return list(items)
++
++    def screenshot_member(self, items):
++        return items[0]
++
++    def tags_stmt(self, items):
++        return {"_stmt": "tags", "value": items[0] if items else []}
++
++    def screenshot_def(self, items):
++        name = str(items[0])
++        members = items[1] if len(items) > 1 else []
++        sc = ScreenshotDef(name=name)
++        for item in members:
++            if isinstance(item, DataField):
++                sc.data_fields.append(item)
++            elif isinstance(item, dict):
++                s = item.get("_stmt")
++                if s == "path":
++                    sc.path = item["value"]
++                elif s == "source":
++                    sc.source = item["value"]
++                elif s == "tags":
++                    sc.tags = item["value"]
++                elif s == "description":
++                    sc.description = item["value"]
++        return sc
++
++    # visual_search_def
++    def visual_search_body(self, items):
++        return list(items)
++
++    def visual_search_member(self, items):
++        return items[0]
++
++    def search_mode_stmt(self, items):
++        return {"_stmt": "search_mode", "value": str(items[0])}
++
++    def query_stmt(self, items):
++        return {"_stmt": "query", "value": items[0]}
++
++    def max_results_stmt(self, items):
++        return {"_stmt": "max_results", "value": items[0]}
++
++    def visual_search_def(self, items):
++        name = str(items[0])
++        members = items[1] if len(items) > 1 else []
++        vs = VisualSearchDef(name=name)
++        for item in members:
++            if isinstance(item, DataField):
++                vs.data_fields.append(item)
++            elif isinstance(item, dict):
++                s = item.get("_stmt")
++                if s == "search_mode":
++                    vs.search_mode = item["value"]
++                elif s == "query":
++                    vs.query = item["value"]
++                elif s == "tags":
++                    vs.tags = item["value"]
++                elif s == "max_results":
++                    val = item["value"]
++                    vs.max_results = int(val) if isinstance(val, (int, float)) else val
++                elif s == "description":
++                    vs.description = item["value"]
++        return vs
++
++    # render_config_def
++    def render_config_body(self, items):
++        return list(items)
++
++    def render_config_member(self, items):
++        return items[0]
++
++    def width_stmt(self, items):
++        return {"_stmt": "width", "value": items[0]}
++
++    def height_stmt(self, items):
++        return {"_stmt": "height", "value": items[0]}
++
++    def theme_stmt(self, items):
++        return {"_stmt": "theme", "value": items[0]}
++
++    def scale_stmt(self, items):
++        return {"_stmt": "scale", "value": items[0]}
++
++    def render_config_def(self, items):
++        name = str(items[0])
++        members = items[1] if len(items) > 1 else []
++        rc = RenderConfigDef(name=name)
++        for item in members:
++            if isinstance(item, DataField):
++                rc.data_fields.append(item)
++            elif isinstance(item, dict):
++                s = item.get("_stmt")
++                if s == "format":
++                    rc.format = item["value"]
++                elif s == "width":
++                    val = item["value"]
++                    rc.width = int(val) if isinstance(val, (int, float)) else val
++                elif s == "height":
++                    val = item["value"]
++                    rc.height = int(val) if isinstance(val, (int, float)) else val
++                elif s == "theme":
++                    rc.theme = item["value"]
++                elif s == "scale":
++                    val = item["value"]
++                    rc.scale = float(val) if isinstance(val, (int, float)) else val
++                elif s == "description":
++                    rc.description = item["value"]
++        return rc
++
+     # --- Import ---
+ 
+     def item(self, items):
+@@ -1234,7 +2402,18 @@ class ArkTransformer(Transformer):
+                                    PrimitiveDef, StructDef, EnumDef,
+                                    ExpressionDef, PredicateDef,
+                                    RoleDef, StudioDef, CommandDef,
+-                                   HookDef, RuleDef, TemplateDef)):
++                                   HookDef, RuleDef, TemplateDef,
++                                   EvolutionTargetDef, EvalDatasetDef,
++                                   FitnessFunctionDef, OptimizerDef,
++                                   BenchmarkGateDef, EvolutionRunDef,
++                                   EvolutionConstraintDef,
++                                   AgentDef, PlatformDef, GatewayDef,
++                                   ExecutionBackendDef, AgentSkillDef,
++                                   LearningConfigDef, CronTaskDef,
++                                   ModelConfigDef,
++                                   DiagramDef, PreviewDef, AnnotationDef,
++                                   VisualReviewDef, ScreenshotDef,
++                                   VisualSearchDef, RenderConfigDef)):
+                 ark_items.append(item)
+         return ArkFile(imports=imports, items=ark_items)
+ 
+@@ -1387,6 +2566,97 @@ def _build_indices(ark_file: ArkFile) -> ArkFile:
+     ark_file.roles = roles
+     ark_file.studios = studios
+     ark_file.commands = commands
++    evolution_targets: dict = {}
++    eval_datasets: dict = {}
++    fitness_functions: dict = {}
++    optimizers: dict = {}
++    benchmark_gates: dict = {}
++    evolution_runs: dict = {}
++    evolution_constraints: dict = {}
++    for item in ark_file.items:
++        if isinstance(item, EvolutionTargetDef):
++            evolution_targets[item.name] = item
++        elif isinstance(item, EvalDatasetDef):
++            eval_datasets[item.name] = item
++        elif isinstance(item, FitnessFunctionDef):
++            fitness_functions[item.name] = item
++        elif isinstance(item, OptimizerDef):
++            optimizers[item.name] = item
++        elif isinstance(item, BenchmarkGateDef):
++            benchmark_gates[item.name] = item
++        elif isinstance(item, EvolutionRunDef):
++            evolution_runs[item.name] = item
++        elif isinstance(item, EvolutionConstraintDef):
++            evolution_constraints[item.name] = item
++    ark_file.evolution_targets = evolution_targets
++    ark_file.eval_datasets = eval_datasets
++    ark_file.fitness_functions = fitness_functions
++    ark_file.optimizers = optimizers
++    ark_file.benchmark_gates = benchmark_gates
++    ark_file.evolution_runs = evolution_runs
++    ark_file.evolution_constraints = evolution_constraints
++    agents: dict = {}
++    platforms: dict = {}
++    gateways: dict = {}
++    execution_backends: dict = {}
++    agent_skills: dict = {}
++    learning_configs: dict = {}
++    cron_tasks: dict = {}
++    model_configs: dict = {}
++    for item in ark_file.items:
++        if isinstance(item, AgentDef):
++            agents[item.name] = item
++        elif isinstance(item, PlatformDef):
++            platforms[item.name] = item
++        elif isinstance(item, GatewayDef):
++            gateways[item.name] = item
++        elif isinstance(item, ExecutionBackendDef):
++            execution_backends[item.name] = item
++        elif isinstance(item, AgentSkillDef):
++            agent_skills[item.name] = item
++        elif isinstance(item, LearningConfigDef):
++            learning_configs[item.name] = item
++        elif isinstance(item, CronTaskDef):
++            cron_tasks[item.name] = item
++        elif isinstance(item, ModelConfigDef):
++            model_configs[item.name] = item
++    ark_file.agents = agents
++    ark_file.platforms = platforms
++    ark_file.gateways = gateways
++    ark_file.execution_backends = execution_backends
++    ark_file.agent_skills = agent_skills
++    ark_file.learning_configs = learning_configs
++    ark_file.cron_tasks = cron_tasks
++    ark_file.model_configs = model_configs
++    diagrams: dict = {}
++    previews: dict = {}
++    annotations: dict = {}
++    visual_reviews: dict = {}
++    screenshots: dict = {}
++    visual_searches: dict = {}
++    render_configs: dict = {}
++    for item in ark_file.items:
++        if isinstance(item, DiagramDef):
++            diagrams[item.name] = item
++        elif isinstance(item, PreviewDef):
++            previews[item.name] = item
++        elif isinstance(item, AnnotationDef):
++            annotations[item.name] = item
++        elif isinstance(item, VisualReviewDef):
++            visual_reviews[item.name] = item
++        elif isinstance(item, ScreenshotDef):
++            screenshots[item.name] = item
++        elif isinstance(item, VisualSearchDef):
++            visual_searches[item.name] = item
++        elif isinstance(item, RenderConfigDef):
++            render_configs[item.name] = item
++    ark_file.diagrams = diagrams
++    ark_file.previews = previews
++    ark_file.annotations = annotations
++    ark_file.visual_reviews = visual_reviews
++    ark_file.screenshots = screenshots
++    ark_file.visual_searches = visual_searches
++    ark_file.render_configs = render_configs
+     return ark_file
+ 
+ 
+diff --git a/ark/tools/verify/ark_verify.py b/ark/tools/verify/ark_verify.py
+index 702d291..d556b6b 100644
+--- a/ark/tools/verify/ark_verify.py
++++ b/ark/tools/verify/ark_verify.py
+@@ -1377,6 +1377,105 @@ def verify_file(ast_json: dict) -> dict:
+             if flat:
+                 all_results["_studio"] = flat
+ 
++    # Evolution verification: run when evolution items are present.
++    evolution_kinds = {
++        "eval_dataset", "fitness_function", "benchmark_gate",
++        "evolution_target", "evolution_run", "optimizer", "constraint",
++    }
++    has_evolution_items = any(
++        isinstance(it, dict) and it.get("kind") in evolution_kinds
++        for it in items
++    )
++    if has_evolution_items:
++        verify_evolution = None
++        try:
++            from tools.verify.evolution_verify import verify_evolution
++        except ImportError:
++            try:
++                import sys as _sys, pathlib as _pathlib
++                _sys.path.insert(0, str(_pathlib.Path(__file__).parent.parent.parent))
++                from tools.verify.evolution_verify import verify_evolution
++            except ImportError:
++                # evolution_verify not available — skip silently
++                pass
++        if verify_evolution is not None:
++            evolution_results = verify_evolution(ast_json)
++            if evolution_results:
++                # Each result dict already has check/entity/status/message fields.
++                # Store them grouped under "_evolution" in all_results,
++                # converting "pass"/"fail"/"warn" → "PASS"/"FAIL"/"WARN" so the
++                # summary tally uses the same case as the rest of the verifier.
++                normalised = []
++                for r in evolution_results:
++                    rec = dict(r)
++                    rec["status"] = rec.get("status", "warn").upper()
++                    normalised.append(rec)
++                all_results["_evolution"] = normalised
++
++    # Agent verification: run when agent-specific items are present.
++    agent_kinds = {
++        "agent", "platform", "gateway", "execution_backend",
++        "skill", "learning_config", "cron_task", "model_config",
++    }
++    has_agent_items = any(
++        isinstance(it, dict) and it.get("kind") in agent_kinds
++        for it in items
++    )
++    if has_agent_items:
++        verify_agent = None
++        try:
++            from tools.verify.agent_verify import verify_agent
++        except ImportError:
++            try:
++                import sys as _sys, pathlib as _pathlib
++                _sys.path.insert(0, str(_pathlib.Path(__file__).parent.parent.parent))
++                from tools.verify.agent_verify import verify_agent
++            except ImportError:
++                # agent_verify not available — skip silently
++                pass
++        if verify_agent is not None:
++            agent_results = verify_agent(ast_json)
++            if agent_results:
++                # Each result dict already has check/status/message fields.
++                # Normalise "pass"/"fail"/"warn" → "PASS"/"FAIL"/"WARN" to match
++                # the case convention used by the rest of the verifier.
++                normalised_agent = []
++                for r in agent_results:
++                    rec = dict(r)
++                    rec["status"] = rec.get("status", "warn").upper()
++                    normalised_agent.append(rec)
++                all_results["_agent"] = normalised_agent
++
++    # Visual verification: run when visual-specific items are present.
++    visual_kinds = {
++        "diagram", "preview", "annotation", "visual_review",
++        "screenshot", "visual_search", "render_config",
++    }
++    has_visual_items = any(
++        isinstance(it, dict) and it.get("kind") in visual_kinds
++        for it in items
++    )
++    if has_visual_items:
++        verify_visual = None
++        try:
++            from tools.verify.visual_verify import verify_visual
++        except ImportError:
++            try:
++                import sys as _sys, pathlib as _pathlib
++                _sys.path.insert(0, str(_pathlib.Path(__file__).parent.parent.parent))
++                from tools.verify.visual_verify import verify_visual
++            except ImportError:
++                pass
++        if verify_visual is not None:
++            visual_results = verify_visual(ast_json)
++            if visual_results:
++                normalised_visual = []
++                for r in visual_results:
++                    rec = dict(r)
++                    rec["status"] = rec.get("status", "warn").upper()
++                    normalised_visual.append(rec)
++                all_results["_visual"] = normalised_visual
++
+     # Summary — PASS_BOUNDED counts as a pass for the purposes of the
+     # running green/red tally, since it's the best the BMC can assert.
+     # PASS_OPAQUE counts as an acknowledged pass (Z3 was used but with
+diff --git a/ark/tools/visualizer/ark_visualizer.py b/ark/tools/visualizer/ark_visualizer.py
+index e83cfb6..c60c473 100644
+--- a/ark/tools/visualizer/ark_visualizer.py
++++ b/ark/tools/visualizer/ark_visualizer.py
+@@ -83,8 +83,571 @@ def generate_graph_data(ast_json: dict) -> dict:
+                 links.append({"source": "registry", "target": ename, "kind": "registers"})
+ 
+     orgchart = extract_orgchart_data(ast_json)
++    evolution = extract_evolution_data(ast_json)
++    agent = extract_agent_data(ast_json)
++    visual = extract_visual_data(ast_json)
+ 
+-    return {"nodes": nodes, "links": links, "groups": groups, "orgchart": orgchart}
++    # Merge evolution nodes/links into main graph
++    nodes.extend(evolution["nodes"])
++    links.extend(evolution["links"])
++
++    # Merge agent nodes/links into main graph
++    nodes.extend(agent["nodes"])
++    links.extend(agent["links"])
++
++    # Merge visual nodes/links into main graph
++    nodes.extend(visual["nodes"])
++    links.extend(visual["links"])
++
++    return {"nodes": nodes, "links": links, "groups": groups, "orgchart": orgchart, "evolution": evolution, "agent": agent, "visual": visual}
++
++
++# ============================================================
++# AGENT DATA EXTRACTION
++# ============================================================
++
++# Agent item kinds
++AGENT_KINDS = {
++    "agent",
++    "platform",
++    "gateway",
++    "execution_backend",
++    "skill",
++    "learning_config",
++    "cron_task",
++    "model_config",
++}
++
++# Agent item kind → node stroke color (cyan/teal family)
++AGENT_KIND_COLORS = {
++    "agent":             "#06b6d4",  # cyan
++    "platform":          "#14b8a6",  # teal
++    "gateway":           "#0891b2",  # dark cyan
++    "execution_backend": "#0d9488",  # dark teal
++    "skill":             "#22d3ee",  # light cyan
++    "learning_config":   "#2dd4bf",  # light teal
++    "cron_task":         "#67e8f9",  # pale cyan
++    "model_config":      "#5eead4",  # pale teal
++}
++
++
++def _agent_tooltip(item: dict) -> dict:
++    """Extract key tooltip properties from an agent AST item."""
++    props = {}
++    kind = item.get("kind", "")
++
++    if kind == "agent":
++        if item.get("model_ref"):
++            props["model"] = str(item["model_ref"])
++        backends = item.get("backends", [])
++        if backends:
++            props["backends"] = len(backends)
++        if item.get("description"):
++            props["description"] = str(item["description"])[:50]
++
++    elif kind == "platform":
++        if item.get("platform_type"):
++            props["type"] = str(item["platform_type"])
++        if item.get("description"):
++            props["description"] = str(item["description"])[:50]
++
++    elif kind == "gateway":
++        if item.get("agent_ref"):
++            props["agent"] = str(item["agent_ref"])
++        platforms = item.get("platforms", [])
++        if platforms:
++            props["platforms"] = len(platforms)
++
++    elif kind == "execution_backend":
++        if item.get("backend_type"):
++            props["type"] = str(item["backend_type"])
++        if item.get("runtime"):
++            props["runtime"] = str(item["runtime"])
++
++    elif kind == "skill":
++        if item.get("description"):
++            props["description"] = str(item["description"])[:50]
++        if item.get("version"):
++            props["version"] = str(item["version"])
++
++    elif kind == "learning_config":
++        if item.get("strategy"):
++            props["strategy"] = str(item["strategy"])
++        if item.get("dataset"):
++            props["dataset"] = str(item["dataset"])
++
++    elif kind == "cron_task":
++        if item.get("schedule"):
++            props["schedule"] = str(item["schedule"])
++        if item.get("agent_ref"):
++            props["agent"] = str(item["agent_ref"])
++        if item.get("platform_delivery"):
++            props["delivery"] = str(item["platform_delivery"])
++
++    elif kind == "model_config":
++        if item.get("model"):
++            props["model"] = str(item["model"])
++        if item.get("provider"):
++            props["provider"] = str(item["provider"])
++        if item.get("fallback"):
++            props["fallback"] = str(item["fallback"])
++
++    return props
++
++
++def extract_agent_data(ast_json: dict) -> dict:
++    """
++    Extract agent architecture items from AST as graph nodes and edges.
++
++    Returns:
++        {
++          "nodes": [...],   # agent node dicts ready for d3
++          "links": [...],   # cross-reference edge dicts
++          "has_agents": bool
++        }
++    """
++    agent_nodes = []
++    agent_links = []
++
++    items = ast_json.get("items", [])
++    for item in items:
++        kind = item.get("kind", "")
++        if kind not in AGENT_KINDS:
++            continue
++
++        name = item.get("name", item.get("id", "?"))
++        tooltip = _agent_tooltip(item)
++
++        node = {
++            "id": name,
++            "kind": kind,
++            "group": kind,
++            "tooltip": tooltip,
++        }
++        agent_nodes.append(node)
++
++        # Extract edges for gateway
++        if kind == "gateway":
++            # gateway → agent (routes_for)
++            agent_ref = item.get("agent_ref")
++            if agent_ref:
++                agent_links.append({
++                    "source": name,
++                    "target": agent_ref,
++                    "kind": "routes_for",
++                })
++            # gateway → platform nodes (connects)
++            for plat in item.get("platforms", []):
++                plat_name = plat if isinstance(plat, str) else plat.get("name", "?")
++                agent_links.append({
++                    "source": name,
++                    "target": plat_name,
++                    "kind": "connects",
++                })
++
++        # Extract edges for agent
++        elif kind == "agent":
++            # agent → model_config (uses_model)
++            model_ref = item.get("model_ref")
++            if model_ref:
++                agent_links.append({
++                    "source": name,
++                    "target": model_ref,
++                    "kind": "uses_model",
++                })
++            # agent → execution_backend (runs_on)
++            for backend in item.get("backends", []):
++                backend_name = backend if isinstance(backend, str) else backend.get("name", "?")
++                agent_links.append({
++                    "source": name,
++                    "target": backend_name,
++                    "kind": "runs_on",
++                })
++
++        # Extract edges for cron_task
++        elif kind == "cron_task":
++            # cron_task → agent (schedules)
++            agent_ref = item.get("agent_ref")
++            if agent_ref:
++                agent_links.append({
++                    "source": name,
++                    "target": agent_ref,
++                    "kind": "schedules",
++                })
++            # cron_task → platform (delivers_to)
++            platform_delivery = item.get("platform_delivery")
++            if platform_delivery:
++                agent_links.append({
++                    "source": name,
++                    "target": platform_delivery,
++                    "kind": "delivers_to",
++                })
++
++        # Extract edges for model_config
++        elif kind == "model_config":
++            # model_config → model_config (falls_back_to)
++            fallback = item.get("fallback")
++            if fallback:
++                agent_links.append({
++                    "source": name,
++                    "target": fallback,
++                    "kind": "falls_back_to",
++                    "dashed": True,
++                })
++
++    return {
++        "nodes": agent_nodes,
++        "links": agent_links,
++        "has_agents": len(agent_nodes) > 0,
++    }
++
++
++# ============================================================
++# VISUAL DATA EXTRACTION
++# ============================================================
++
++# Visual item kinds
++VISUAL_KINDS = {
++    "diagram",
++    "preview",
++    "annotation",
++    "visual_review",
++    "screenshot",
++    "visual_search",
++    "render_config",
++}
++
++# Visual item kind → node stroke color (orange/amber family)
++VISUAL_KIND_COLORS = {
++    "diagram":       "#f59e0b",  # amber
++    "preview":       "#d97706",  # dark amber
++    "annotation":    "#fb923c",  # orange
++    "visual_review": "#ea580c",  # dark orange
++    "screenshot":    "#fbbf24",  # yellow-amber
++    "visual_search": "#f97316",  # bright orange
++    "render_config": "#fcd34d",  # pale amber
++}
++
++
++def _visual_tooltip(item: dict) -> dict:
++    """Extract key tooltip properties from a visual AST item."""
++    props = {}
++    kind = item.get("kind", "")
++
++    if kind == "diagram":
++        if item.get("format"):
++            props["format"] = str(item["format"])
++        if item.get("source"):
++            props["source"] = str(item["source"])[:50]
++        if item.get("render_config_ref"):
++            props["render_config"] = str(item["render_config_ref"])
++
++    elif kind == "preview":
++        if item.get("target_ref"):
++            props["target"] = str(item["target_ref"])
++        if item.get("render_config_ref"):
++            props["render_config"] = str(item["render_config_ref"])
++        if item.get("resolution"):
++            props["resolution"] = str(item["resolution"])
++
++    elif kind == "annotation":
++        if item.get("target_ref"):
++            props["target"] = str(item["target_ref"])
++        if item.get("label"):
++            props["label"] = str(item["label"])[:50]
++        if item.get("annotation_type"):
++            props["type"] = str(item["annotation_type"])
++
++    elif kind == "visual_review":
++        if item.get("target_ref"):
++            props["target"] = str(item["target_ref"])
++        if item.get("status"):
++            props["status"] = str(item["status"])
++        if item.get("reviewer"):
++            props["reviewer"] = str(item["reviewer"])
++
++    elif kind == "screenshot":
++        if item.get("source"):
++            props["source"] = str(item["source"])[:50]
++        if item.get("resolution"):
++            props["resolution"] = str(item["resolution"])
++        if item.get("timestamp"):
++            props["timestamp"] = str(item["timestamp"])
++
++    elif kind == "visual_search":
++        if item.get("query"):
++            props["query"] = str(item["query"])[:50]
++        if item.get("index"):
++            props["index"] = str(item["index"])
++        if item.get("result_count") is not None:
++            props["results"] = str(item["result_count"])
++
++    elif kind == "render_config":
++        if item.get("renderer"):
++            props["renderer"] = str(item["renderer"])
++        if item.get("quality"):
++            props["quality"] = str(item["quality"])
++        if item.get("output_format"):
++            props["format"] = str(item["output_format"])
++
++    return props
++
++
++def extract_visual_data(ast_json: dict) -> dict:
++    """
++    Extract visual pipeline items from AST as graph nodes and edges.
++
++    Returns:
++        {
++          "nodes": [...],   # visual node dicts ready for d3
++          "links": [...],   # cross-reference edge dicts
++          "has_visuals": bool
++        }
++    """
++    visual_nodes = []
++    visual_links = []
++
++    items = ast_json.get("items", [])
++    for item in items:
++        kind = item.get("kind", "")
++        if kind not in VISUAL_KINDS:
++            continue
++
++        name = item.get("name", item.get("id", "?"))
++        tooltip = _visual_tooltip(item)
++
++        node = {
++            "id": name,
++            "kind": kind,
++            "group": kind,
++            "tooltip": tooltip,
++        }
++        visual_nodes.append(node)
++
++        # Extract edges for visual_review → target (diagram/preview/screenshot)
++        if kind == "visual_review":
++            target_ref = item.get("target_ref")
++            if target_ref:
++                visual_links.append({
++                    "source": name,
++                    "target": target_ref,
++                    "kind": "reviews",
++                })
++
++        # Extract edges for annotation → target
++        elif kind == "annotation":
++            target_ref = item.get("target_ref")
++            if target_ref:
++                visual_links.append({
++                    "source": name,
++                    "target": target_ref,
++                    "kind": "annotates",
++                })
++
++        # Extract edges for diagram → render_config
++        elif kind == "diagram":
++            render_ref = item.get("render_config_ref")
++            if render_ref:
++                visual_links.append({
++                    "source": name,
++                    "target": render_ref,
++                    "kind": "uses_render_config",
++                })
++
++        # Extract edges for preview → render_config
++        elif kind == "preview":
++            render_ref = item.get("render_config_ref")
++            if render_ref:
++                visual_links.append({
++                    "source": name,
++                    "target": render_ref,
++                    "kind": "uses_render_config",
++                })
++
++    return {
++        "nodes": visual_nodes,
++        "links": visual_links,
++        "has_visuals": len(visual_nodes) > 0,
++    }
++
++
++# ============================================================
++# EVOLUTION DATA EXTRACTION
++# ============================================================
++
++# Evolution item kinds and their group labels
++EVOLUTION_KINDS = {
++    "evolution_target",
++    "eval_dataset",
++    "fitness_function",
++    "optimizer",
++    "benchmark_gate",
++    "evolution_run",
++    "evolution_constraint",
++    "constraint",  # alias sometimes used in .ark files
++}
++
++
++def _evo_tooltip(item: dict) -> dict:
++    """Extract key tooltip properties from an evolution AST item."""
++    props = {}
++    kind = item.get("kind", "")
++
++    if kind == "evolution_target":
++        if item.get("tier") is not None:
++            props["tier"] = str(item["tier"])
++        if item.get("engine"):
++            props["engine"] = str(item["engine"])
++        if item.get("objective"):
++            props["objective"] = str(item["objective"])
++        constraint_refs = item.get("constraints", [])
++        if constraint_refs:
++            props["constraints"] = len(constraint_refs)
++
++    elif kind == "eval_dataset":
++        if item.get("source"):
++            props["source"] = str(item["source"])
++        if item.get("size") is not None:
++            props["size"] = str(item["size"])
++        if item.get("split"):
++            props["split"] = str(item["split"])
++
++    elif kind == "fitness_function":
++        dims = item.get("dimensions", [])
++        props["dimensions"] = len(dims)
++        if item.get("aggregation"):
++            props["aggregation"] = str(item["aggregation"])
++
++    elif kind == "optimizer":
++        if item.get("engine"):
++            props["engine"] = str(item["engine"])
++        if item.get("population") is not None:
++            props["population"] = str(item["population"])
++        if item.get("generations") is not None:
++            props["generations"] = str(item["generations"])
++
++    elif kind == "benchmark_gate":
++        if item.get("tolerance") is not None:
++            props["tolerance"] = str(item["tolerance"])
++        if item.get("metric"):
++            props["metric"] = str(item["metric"])
++        if item.get("threshold") is not None:
++            props["threshold"] = str(item["threshold"])
++
++    elif kind == "evolution_run":
++        if item.get("status"):
++            props["status"] = str(item["status"])
++        if item.get("target_ref"):
++            props["target_ref"] = str(item["target_ref"])
++        if item.get("optimizer_ref"):
++            props["optimizer_ref"] = str(item["optimizer_ref"])
++        if item.get("dataset_ref"):
++            props["dataset_ref"] = str(item["dataset_ref"])
++        if item.get("gate_ref"):
++            props["gate_ref"] = str(item["gate_ref"])
++
++    elif kind in ("evolution_constraint", "constraint"):
++        if item.get("enforcement"):
++            props["enforcement"] = str(item["enforcement"])
++        if item.get("tolerance") is not None:
++            props["tolerance"] = str(item["tolerance"])
++        if item.get("expression"):
++            props["expression"] = str(item["expression"])[:60]
++
++    return props
++
++
++def extract_evolution_data(ast_json: dict) -> dict:
++    """
++    Extract evolution pipeline items from AST as graph nodes and edges.
++
++    Returns:
++        {
++          "nodes": [...],   # evolution node dicts ready for d3
++          "links": [...],   # cross-reference edge dicts
++          "has_evolution": bool
++        }
++    """
++    evo_nodes = []
++    evo_links = []
++
++    items = ast_json.get("items", [])
++    for item in items:
++        kind = item.get("kind", "")
++        if kind not in EVOLUTION_KINDS:
++            continue
++
++        name = item.get("name", item.get("id", "?"))
++        tooltip = _evo_tooltip(item)
++
++        # Normalise constraint → evolution_constraint for grouping
++        group = kind if kind != "constraint" else "evolution_constraint"
++
++        node = {
++            "id": name,
++            "kind": kind,
++            "group": group,
++            "tooltip": tooltip,
++        }
++        evo_nodes.append(node)
++
++        # Extract cross-reference edges from evolution_run
++        if kind == "evolution_run":
++            # evolution_run → evolution_target
++            if item.get("target_ref"):
++                evo_links.append({
++                    "source": name,
++                    "target": item["target_ref"],
++                    "kind": "evolves",
++                })
++            # evolution_run → optimizer
++            if item.get("optimizer_ref"):
++                evo_links.append({
++                    "source": name,
++                    "target": item["optimizer_ref"],
++                    "kind": "uses_optimizer",
++                })
++            # evolution_run → eval_dataset
++            if item.get("dataset_ref"):
++                evo_links.append({
++                    "source": name,
++                    "target": item["dataset_ref"],
++                    "kind": "uses_dataset",
++                })
++            # evolution_run → benchmark_gate
++            if item.get("gate_ref"):
++                evo_links.append({
++                    "source": name,
++                    "target": item["gate_ref"],
++                    "kind": "gates_through",
++                })
++
++        # Extract constraint edges from evolution_target
++        elif kind == "evolution_target":
++            for constraint_ref in item.get("constraints", []):
++                ref_name = constraint_ref if isinstance(constraint_ref, str) else constraint_ref.get("name", "?")
++                evo_links.append({
++                    "source": name,
++                    "target": ref_name,
++                    "kind": "constrained_by",
++                    "dashed": True,
++                })
++
++        # Extract scored_by edge from eval_dataset → fitness_function
++        elif kind == "eval_dataset":
++            fitness_ref = item.get("fitness_function") or item.get("fitness_ref")
++            if fitness_ref:
++                evo_links.append({
++                    "source": name,
++                    "target": fitness_ref,
++                    "kind": "scored_by",
++                })
++
++    return {
++        "nodes": evo_nodes,
++        "links": evo_links,
++        "has_evolution": len(evo_nodes) > 0,
++    }
+ 
+ 
+ # ============================================================
+@@ -333,6 +896,21 @@ def generate_html(graph_data: dict, title: str = "ARK System Graph") -> str:
+   .link.bridge   {{ stroke: #af8; stroke-width: 2; }}
+   .link.verifies {{ stroke: #fa8; stroke-dasharray: 3 3; }}
+   .link.registers {{ stroke: #888; stroke-dasharray: 2 4; }}
++  /* Evolution pipeline edge styles */
++  .link.evolves         {{ stroke: #d946ef; stroke-width: 2; }}
++  .link.uses_optimizer  {{ stroke: #a78bfa; stroke-width: 1.5; }}
++  .link.uses_dataset    {{ stroke: #818cf8; stroke-width: 1.5; }}
++  .link.gates_through   {{ stroke: #f0abfc; stroke-width: 2; }}
++  .link.constrained_by  {{ stroke: #9333ea; stroke-dasharray: 5 3; }}
++  .link.scored_by       {{ stroke: #c084fc; stroke-dasharray: 3 2; }}
++  /* Agent architecture edge styles */
++  .link.routes_for      {{ stroke: #0891b2; stroke-width: 2; }}
++  .link.connects        {{ stroke: #14b8a6; stroke-width: 1.5; }}
++  .link.uses_model      {{ stroke: #06b6d4; stroke-width: 1.5; stroke-dasharray: 4 2; }}
++  .link.runs_on         {{ stroke: #0d9488; stroke-width: 1.5; }}
++  .link.schedules       {{ stroke: #67e8f9; stroke-width: 1.5; stroke-dasharray: 6 3; }}
++  .link.delivers_to     {{ stroke: #22d3ee; stroke-width: 1.5; }}
++  .link.falls_back_to   {{ stroke: #5eead4; stroke-dasharray: 5 3; }}
+ 
+   .link-label {{
+     font-size: 9px; fill: #556;
+@@ -512,11 +1090,29 @@ let currentView = 'entity'; // 'entity' | 'orgchart'
+ // COLOR SCHEME
+ // ============================================================
+ const COLORS = {{
+-  abstraction: {{ fill: '#1a1a2e', stroke: '#f8a' }},
+-  class:       {{ fill: '#1a2a1a', stroke: '#8f8' }},
+-  island:      {{ fill: '#1a1a3a', stroke: '#7af' }},
+-  verify:      {{ fill: '#2a1a1a', stroke: '#fa8' }},
+-  default:     {{ fill: '#1a1a1a', stroke: '#555' }},
++  // --- existing entity/island/studio groups ---
++  abstraction:          {{ fill: '#1a1a2e', stroke: '#f8a' }},
++  class:                {{ fill: '#1a2a1a', stroke: '#8f8' }},
++  island:               {{ fill: '#1a1a3a', stroke: '#7af' }},
++  verify:               {{ fill: '#2a1a1a', stroke: '#fa8' }},
++  default:              {{ fill: '#1a1a1a', stroke: '#555' }},
++  // --- evolution pipeline groups (purple/violet family) ---
++  evolution_target:     {{ fill: '#1e1228', stroke: '#c084fc' }},  // bright purple
++  eval_dataset:         {{ fill: '#1a1030', stroke: '#818cf8' }},  // indigo
++  fitness_function:     {{ fill: '#130e2a', stroke: '#a78bfa' }},  // violet
++  optimizer:            {{ fill: '#1c1030', stroke: '#e879f9' }},  // fuchsia
++  benchmark_gate:       {{ fill: '#1e0e2a', stroke: '#f0abfc' }},  // pink-violet
++  evolution_run:        {{ fill: '#120e20', stroke: '#d946ef' }},  // vivid magenta
++  evolution_constraint: {{ fill: '#1a0e28', stroke: '#9333ea' }},  // deep purple
++  // --- agent architecture groups (cyan/teal family) ---
++  agent:                {{ fill: '#0c1a1e', stroke: '#06b6d4' }},  // cyan
++  platform:             {{ fill: '#0c1a18', stroke: '#14b8a6' }},  // teal
++  gateway:              {{ fill: '#081820', stroke: '#0891b2' }},  // dark cyan
++  execution_backend:    {{ fill: '#081a18', stroke: '#0d9488' }},  // dark teal
++  skill:                {{ fill: '#0e1e22', stroke: '#22d3ee' }},  // light cyan
++  learning_config:      {{ fill: '#0e1e1c', stroke: '#2dd4bf' }},  // light teal
++  cron_task:            {{ fill: '#101e22', stroke: '#67e8f9' }},  // pale cyan
++  model_config:         {{ fill: '#0e1e1c', stroke: '#5eead4' }},  // pale teal
+ }};
+ 
+ // ============================================================
+@@ -603,12 +1199,14 @@ function getNodeSize(node) {{
+   if (currentLOD === 1) return {{ w: 140, h: 50 }};
+   if (currentLOD === 2) {{
+     const ports = (node.inputs?.length || 0) + (node.outputs?.length || 0);
+-    return {{ w: 160, h: 55 + ports * 12 }};
++    const tooltipCount = node.tooltip ? Object.keys(node.tooltip).length : 0;
++    return {{ w: 160, h: 55 + ports * 12 + (tooltipCount > 0 ? tooltipCount * 12 : 0) }};
+   }}
+   // LOD 3
+   const fields = (node.data?.length || 0) + (node.inputs?.length || 0) +
+                  (node.outputs?.length || 0);
+-  return {{ w: 200, h: 60 + fields * 14 }};
++  const tooltipCount = node.tooltip ? Object.keys(node.tooltip).length : 0;
++  return {{ w: 200, h: 60 + fields * 14 + tooltipCount * 13 }};
+ }}
+ 
+ function renderEntityGraph() {{
+@@ -634,14 +1232,23 @@ function renderEntityGraph() {{
+     line.setAttribute('marker-end', 'url(#arrow)');
+     linkGroup.appendChild(line);
+ 
+-    // Link labels at LOD 2+
+-    if (currentLOD >= 2 && link.name) {{
++    // Link labels at LOD 2+: show name for bridges, show kind for evolution/agent edges
++    const evoEdgeKinds = ['evolves','uses_optimizer','uses_dataset','gates_through','constrained_by','scored_by'];
++    const agentEdgeKinds = ['routes_for','connects','uses_model','runs_on','schedules','delivers_to','falls_back_to'];
++    if (currentLOD >= 2 && (link.name || evoEdgeKinds.includes(link.kind) || agentEdgeKinds.includes(link.kind))) {{
+       const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+       label.setAttribute('x', (s.x + t.x) / 2);
+       label.setAttribute('y', (s.y + t.y) / 2 - 8);
+       label.setAttribute('class', 'link-label');
+       label.setAttribute('text-anchor', 'middle');
+-      label.textContent = link.name;
++      if (evoEdgeKinds.includes(link.kind)) {{
++        label.setAttribute('fill', '#9333ea');
++        label.setAttribute('opacity', '0.8');
++      }} else if (agentEdgeKinds.includes(link.kind)) {{
++        label.setAttribute('fill', '#06b6d4');
++        label.setAttribute('opacity', '0.8');
++      }}
++      label.textContent = link.name || link.kind;
+       linkGroup.appendChild(label);
+     }}
+   }}
+@@ -729,6 +1336,25 @@ function renderEntityGraph() {{
+       }}
+     }}
+ 
++    // LOD 2+ : show evolution tooltip properties inline
++    if (currentLOD >= 2 && node.tooltip && Object.keys(node.tooltip).length > 0) {{
++      const colors = COLORS[node.kind] || COLORS.default;
++      let yOff = 48 + ((node.inputs?.length || 0) + (node.outputs?.length || 0)) * 12;
++      if (currentLOD >= 3) {{
++        yOff += (node.data?.length || 0) * 14 + (node.invariants || node.processes ? 14 : 0);
++      }}
++      for (const [k, v] of Object.entries(node.tooltip)) {{
++        const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
++        t.setAttribute('x', 12); t.setAttribute('y', yOff);
++        t.setAttribute('font-family', "'JetBrains Mono', monospace");
++        t.setAttribute('font-size', '8');
++        t.setAttribute('fill', colors.stroke);
++        t.setAttribute('opacity', '0.85');
++        t.textContent = `${{k}}: ${{v}}`;
++        g.appendChild(t); yOff += 12;
++      }}
++    }}
++
+     svg.appendChild(g);
+   }}
+ 
+@@ -1095,6 +1721,37 @@ function selectNode(node) {{
+   if (node.invariants) html += `<div class="inspector-section"><h4>Invariants</h4>${{node.invariants}}</div>`;
+   if (node.processes) html += `<div class="inspector-section"><h4>Process Rules</h4>${{node.processes}}</div>`;
+ 
++  // Evolution node tooltip properties
++  if (node.tooltip && Object.keys(node.tooltip).length > 0) {{
++    html += `<div class="inspector-section"><h4>Evolution Properties</h4>`;
++    for (const [k, v] of Object.entries(node.tooltip)) {{
++      html += `<div style="margin:2px 0"><span style="color:#9333ea;font-size:10px">${{k}}:</span>
++        <span class="tag" style="border-color:#9333ea;color:#c084fc">${{v}}</span></div>`;
++    }}
++    html += `</div>`;
++  }}
++
++  // Show evolution cross-references in inspector
++  const evoEdgeKinds = ['evolves','uses_optimizer','uses_dataset','gates_through','constrained_by','scored_by'];
++  const outRefs = DATA.links.filter(l => l.source === node.id && evoEdgeKinds.includes(l.kind));
++  const inRefs  = DATA.links.filter(l => l.target === node.id && evoEdgeKinds.includes(l.kind));
++  if (outRefs.length) {{
++    html += `<div class="inspector-section"><h4>Evolution Out-Edges</h4>`;
++    outRefs.forEach(e => {{
++      html += `<div style="margin:2px 0"><span style="color:#818cf8;font-size:9px">${{e.kind}}</span>
++        <span class="tag" style="border-color:#d946ef;color:#f0abfc"> → ${{e.target}}</span></div>`;
++    }});
++    html += `</div>`;
++  }}
++  if (inRefs.length) {{
++    html += `<div class="inspector-section"><h4>Evolution In-Edges</h4>`;
++    inRefs.forEach(e => {{
++      html += `<div style="margin:2px 0"><span style="color:#818cf8;font-size:9px">${{e.kind}}</span>
++        <span class="tag" style="border-color:#a78bfa;color:#c084fc"> ← ${{e.source}}</span></div>`;
++    }});
++    html += `</div>`;
++  }}
++
+   document.getElementById('insp-body').innerHTML = html;
+ }}
+ 
