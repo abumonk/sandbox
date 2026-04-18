@@ -5,6 +5,10 @@
 <title>Adventure Console</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/cytoscape@3.28.1/dist/cytoscape.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dagre@0.8.5/dist/dagre.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
+<script>if (window.cytoscape && window.cytoscapeDagre) cytoscape.use(cytoscapeDagre);</script>
 <style>
   :root {
     --bg: #0f141a;
@@ -19,6 +23,13 @@
     --warn: #f0b04a;
     --err: #e66a6a;
     --badge-bg: #243040;
+    --card-bg:       #1a222d;
+    --card-border:   #2a343f;
+    --pill-bg:       #243040;
+    --chip-bg:       #1d2731;
+    --chip-active:   #2d6ca8;
+    --progress-bg:   #243040;
+    --progress-fill: #5ab0ff;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
@@ -92,6 +103,7 @@
     font-size: 11px;
   }
   .adv-item .adv-title { display: block; font-weight: 500; margin-top: 2px; }
+  .adv-item .adv-line1 { display: flex; align-items: center; gap: 6px; }
 
   /* Badges */
   .badge {
@@ -149,36 +161,6 @@
 
   .btn-row { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 12px; }
 
-  /* Two-column file browser */
-  .split {
-    display: grid; grid-template-columns: 240px 1fr; gap: 10px;
-    min-height: 400px;
-  }
-  .split .file-list {
-    background: var(--bg-alt); border: 1px solid var(--border);
-    border-radius: 4px; padding: 6px; overflow-y: auto;
-    max-height: 70vh;
-  }
-  .file-list .file-entry {
-    padding: 4px 8px; cursor: pointer; border-radius: 3px;
-    font-family: "Cascadia Mono", monospace; font-size: 11px;
-    display: flex; justify-content: space-between; align-items: center;
-    gap: 6px;
-  }
-  .file-list .file-entry:hover { background: var(--bg-hover); }
-  .file-list .file-entry.active { background: var(--accent-dim); color: #fff; }
-  .file-view {
-    background: var(--bg-alt); border: 1px solid var(--border);
-    border-radius: 4px; padding: 14px 18px; overflow: auto;
-    max-height: 70vh;
-  }
-  .file-view h1, .file-view h2, .file-view h3 { border-bottom: 1px solid var(--border); padding-bottom: 4px; }
-  .file-view h1 { font-size: 18px; }
-  .file-view h2 { font-size: 16px; }
-  .file-view h3 { font-size: 14px; }
-  .file-view table { font-size: 11px; }
-  .file-view table th { background: var(--bg); }
-
   /* Knowledge */
   .kb-item {
     background: var(--bg-alt); border: 1px solid var(--border);
@@ -225,6 +207,317 @@
     max-height: 300px; overflow-y: auto; white-space: pre;
     border: 1px solid var(--border);
   }
+
+  /* ===== v2 visual system (ADV-009) ===== */
+
+  /* .card */
+  .card {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 6px;
+    padding: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  }
+  .card-title {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0 0 6px;
+  }
+  .card-meta {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--muted);
+  }
+
+  /* .pill */
+  .pill {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 10px;
+    background: var(--pill-bg);
+    font-size: 11px;
+    font-weight: 500;
+    border: 1px solid var(--border);
+  }
+  .pill.state-concept     { color: var(--muted); }
+  .pill.state-planning    { color: var(--warn); border-color: var(--warn); }
+  .pill.state-review      { color: var(--accent); border-color: var(--accent); }
+  .pill.state-active      { color: var(--ok); border-color: var(--ok); }
+  .pill.state-blocked     { color: var(--err); border-color: var(--err); }
+  .pill.state-completed   { color: var(--ok); background: #1a3024; }
+  .pill.state-cancelled   { color: var(--muted); text-decoration: line-through; }
+  .pill.status-passed, .pill.status-PASSED { color: var(--ok); }
+  .pill.status-failed, .pill.status-FAILED { color: var(--err); }
+  .pill.status-pending, .pill.status-in_progress { color: var(--warn); }
+  .pill.status-done { color: var(--ok); }
+
+  /* ===== Pipeline context menu (ADV009-T020) ===== */
+  .context-menu {
+    position: fixed; z-index: 1000; min-width: 180px;
+    display: none; padding: 4px 0;
+  }
+  .context-menu-item {
+    padding: 7px 14px; font-size: 12px; cursor: pointer;
+    color: var(--text); white-space: nowrap;
+    border-radius: 3px;
+  }
+  .context-menu-item:hover { background: var(--bg-hover); color: var(--accent); }
+  .context-menu-sep { height: 1px; background: var(--border); margin: 3px 0; }
+
+  /* ===== Pipeline tab (ADV009-T019) ===== */
+  .pipeline-wrap { position: relative; height: 72vh; }
+  #pipeline-canvas { position: absolute; inset: 0;
+    background: var(--bg-alt);
+    border: 1px solid var(--border); border-radius: 4px; }
+  .pipeline-legend { position: absolute; top: 10px; right: 10px;
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 4px; padding: 8px 10px;
+    font-size: 11px; z-index: 5; pointer-events: none; }
+  .pipeline-legend .sw { display: inline-block; width: 10px; height: 10px;
+    margin-right: 6px; vertical-align: middle;
+    border-radius: 2px; border: 1px solid var(--border); }
+  .pipeline-tooltip { position: absolute; z-index: 10;
+    background: #000c; color: var(--text);
+    border: 1px solid var(--border); border-radius: 3px;
+    padding: 6px 10px; font-size: 12px; max-width: 320px;
+    pointer-events: none; display: none; }
+
+  /* .progress */
+  .progress {
+    width: 100%;
+    height: 8px;
+    background: var(--progress-bg);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .progress > span {
+    display: block;
+    height: 100%;
+    background: var(--progress-fill);
+    border-radius: 4px;
+    transition: width 0.2s ease;
+  }
+
+  /* .chip-bar / .chip */
+  .chip-bar {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin: 8px 0;
+  }
+  .chip {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    background: var(--chip-bg);
+    border: 1px solid var(--border);
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    color: var(--muted);
+    user-select: none;
+  }
+  .chip:hover { color: var(--text); border-color: var(--accent-dim); }
+  .chip.active {
+    background: var(--chip-active);
+    border-color: var(--accent);
+    color: var(--text);
+  }
+  .chip:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  /* .stack */
+  .stack {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* details.disclosure */
+  details.disclosure {
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-alt);
+    padding: 0;
+  }
+  details.disclosure > summary {
+    padding: 8px 12px;
+    cursor: pointer;
+    font-weight: 500;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    user-select: none;
+  }
+  details.disclosure > summary::-webkit-details-marker { display: none; }
+  details.disclosure > summary::before {
+    content: '';
+    display: inline-block;
+    width: 0;
+    height: 0;
+    border-top: 5px solid transparent;
+    border-bottom: 5px solid transparent;
+    border-left: 6px solid var(--muted);
+    transition: transform 0.15s ease;
+    flex-shrink: 0;
+  }
+  details.disclosure[open] > summary::before {
+    transform: rotate(90deg);
+  }
+  details.disclosure > summary:hover { background: var(--bg-hover); border-radius: 4px 4px 0 0; }
+  details.disclosure > :not(summary) {
+    padding: 10px 12px;
+    border-top: 1px solid var(--border);
+  }
+
+  /* ===== v2 header / sidebar helpers (ADV009-T006) ===== */
+  .header-strip { gap: 14px; align-items: center; }
+  .header-strip .pill { margin-left: 4px; }
+  .progress-inline {
+    display: inline-flex; align-items: center; gap: 8px;
+    min-width: 160px;
+  }
+  .progress-inline .progress { flex: 1; }
+  .progress-inline .progress-label {
+    font-size: 11px; color: var(--muted);
+    font-family: "Cascadia Mono", monospace;
+  }
+  .cta-primary { margin-left: auto; }
+  .adv-subtitle {
+    font-size: 11px; color: var(--muted);
+    margin-top: 2px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  /* Overview tab helpers (ADV009-T007) */
+  .tc-progress-label {
+    font-size: 11px; color: var(--muted); margin-top: 4px;
+    font-family: "Cascadia Mono", monospace;
+  }
+  .tc-row {
+    display: flex; gap: 8px; align-items: center; padding: 2px 0;
+    font-size: 12px;
+  }
+
+  /* Documents tab helpers (ADV009-T009) */
+  .pill.type-design   { color: #5ab0ff; border-color: #2d6ca8; background: #1a2a40; }
+  .pill.type-plan     { color: #b57fff; border-color: #6a3fa8; background: #22193a; }
+  .pill.type-research { color: var(--muted); border-color: var(--border); }
+  .pill.type-review   { color: var(--ok); border-color: #2d6a42; background: #1a3024; }
+  .pill.type-review.status-FAILED,
+  .pill.type-review.status-failed { color: var(--err); border-color: #6a2d2d; background: #3a1a1a; }
+
+  .doc-row {
+    display: flex; align-items: flex-start; gap: 8px;
+    cursor: pointer; padding: 10px; margin-bottom: 6px;
+    transition: border-color 0.15s;
+  }
+  .doc-row:hover { border-color: var(--accent-dim); }
+  .doc-row.active { border-color: var(--accent); }
+  .doc-row-body { flex: 1; min-width: 0; }
+  .doc-title { font-weight: 500; font-size: 13px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .doc-sub { font-size: 11px; color: var(--muted); display: block; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .doc-layout { display: grid; grid-template-columns: 300px 1fr; gap: 12px; min-height: 400px; }
+  .doc-list-col { overflow-y: auto; max-height: 70vh; }
+  .doc-view {
+    background: var(--bg-alt); border: 1px solid var(--border);
+    border-radius: 6px; padding: 16px; overflow-y: auto;
+    max-height: 70vh;
+  }
+  .doc-view h1, .doc-view h2, .doc-view h3 { border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+  .doc-view h1 { font-size: 18px; } .doc-view h2 { font-size: 16px; } .doc-view h3 { font-size: 14px; }
+  .doc-view table { font-size: 11px; } .doc-view table th { background: var(--bg); }
+
+  .design-header { margin-bottom: 12px; display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+  .design-header-text { flex: 1; min-width: 0; }
+  .design-header strong { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .design-header p { margin: 0; font-size: 13px; line-height: 1.45; }
+  .design-layout { display: grid; grid-template-columns: 1fr 200px; gap: 14px; }
+  .design-rail .card { margin-bottom: 10px; }
+  .design-rail h4 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+  .design-rail li { font-size: 11px; margin: 3px 0; list-style: none; padding-left: 0; font-family: "Cascadia Mono", monospace; }
+
+  .wave-group { border-left: 3px solid var(--accent-dim); background: var(--bg-alt); border-radius: 0 6px 6px 0; margin-bottom: 14px; padding: 10px 14px; }
+  .wave-title { font-size: 13px; font-weight: 600; color: var(--accent); margin: 0 0 8px; }
+  .wave-group .card { margin-bottom: 6px; }
+
+  .review-strip { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  .review-strip strong { font-family: "Cascadia Mono", monospace; font-size: 12px; }
+  .review-strip .muted { font-size: 11px; color: var(--muted); }
+
+  .kv-strip { display: flex; flex-wrap: wrap; gap: 12px; font-size: 11px; padding: 8px 0; }
+  .kv-strip .kv-pair { display: flex; align-items: baseline; gap: 4px; }
+  .kv-strip .kv-key { color: var(--muted); }
+  .kv-strip .kv-val { font-family: "Cascadia Mono", monospace; }
+
+  .issues-list { list-style: none; padding: 0; margin: 8px 0; }
+  .issues-list .issue { padding: 5px 10px; border-left: 3px solid var(--border); margin-bottom: 4px; font-size: 12px; border-radius: 0 3px 3px 0; background: var(--bg-alt); }
+  .issues-list .issue.sev-blocker { border-color: var(--err); }
+  .issues-list .issue.sev-major   { border-color: var(--warn); }
+  .issues-list .issue.sev-minor   { border-color: var(--accent-dim); }
+  .issues-list .issue.sev-note    { border-color: var(--muted); color: var(--muted); }
+
+  /* Tasks tab helpers (ADV009-T008) */
+  .task-bucket { margin-bottom: 20px; }
+  .task-bucket h3 { font-size: 13px; color: var(--muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .task-card {
+    cursor: pointer;
+    margin-bottom: 8px;
+    transition: border-color 0.15s ease;
+  }
+  .task-card:hover { border-color: var(--accent-dim); }
+  .task-card.active { border-color: var(--accent); }
+  .task-card-top {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
+  }
+  .task-card-id {
+    font-family: "Cascadia Mono", monospace; font-size: 11px;
+    color: var(--text); font-weight: 600;
+  }
+  .task-card-stage { font-size: 11px; color: var(--muted); }
+  .task-card-meta {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 11px; color: var(--muted); margin-top: 4px; flex-wrap: wrap; gap: 4px;
+  }
+
+  /* Status dot for depends-on chain */
+  .status-dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--muted);
+    flex-shrink: 0;
+  }
+  .status-dot.status-passed, .status-dot.status-PASSED { background: var(--ok); }
+  .status-dot.status-failed, .status-dot.status-FAILED { background: var(--err); }
+  .status-dot.status-pending, .status-dot.status-in_progress { background: var(--warn); }
+  .status-dot.status-done { background: var(--ok); }
+
+  /* Detail panel sections */
+  .task-detail-section { margin-bottom: 12px; }
+  .depends-chain {
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    font-size: 12px;
+  }
+  .depends-node {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: var(--bg-alt); border: 1px solid var(--border);
+    border-radius: 4px; padding: 2px 8px;
+    font-family: "Cascadia Mono", monospace; font-size: 11px;
+  }
+  .depends-arrow { color: var(--muted); font-size: 12px; }
+  .tc-checklist-row {
+    display: flex; gap: 8px; align-items: center; padding: 3px 0;
+    font-size: 12px;
+  }
+  .tc-checklist-row.status-failed { color: var(--err); }
+  .ac-list { margin: 8px 0; padding-left: 0; list-style: none; }
+  .ac-list li { display: flex; gap: 8px; align-items: flex-start; padding: 2px 0; font-size: 12px; }
+  .ac-list li input[type=checkbox] { margin-top: 2px; flex-shrink: 0; }
 </style>
 </head>
 <body>
@@ -239,7 +532,8 @@
   <div id="content"><div class="empty">Select an adventure from the sidebar.</div></div>
 </div>
 
-<div id="toast"></div>
+<div id="toast" data-testid="toast"></div>
+<div id="pipeline-ctx" class="card context-menu" data-testid="context-menu"></div>
 
 <script>
 // ----------------------------------------------------------------------------
@@ -254,6 +548,9 @@ const API = {
   approveDes:  (id, design) => post('/api/adventures/' + id + '/design/approve', {design}),
   applyKB:     (id, indices) => post('/api/adventures/' + id + '/knowledge/apply', {indices}),
   log:         (id, message) => post('/api/adventures/' + id + '/log', {message}),
+  documents:   id => fetch('/api/adventures/' + id + '/documents').then(j),
+  addDepends:  (id, taskId, depTaskId) =>
+    post('/api/adventures/' + id + '/tasks/' + taskId + '/depends_on', {depends_on: depTaskId}),
 };
 function j(r) {
   if (!r.ok) return r.json().then(e => Promise.reject(e.error || r.statusText));
@@ -316,6 +613,13 @@ const App = {
   currentId: null,
   currentAdv: null,
   currentTab: 'overview',
+  documentsFilter: 'all',
+  documentsCache: null,
+  _documentsCacheId: null,
+  // Pipeline tab state
+  cy: null,
+  pipelineTimer: null,
+  lastGraphExplanations: {},
 
   async refreshList() {
     const list = $('#adv-list');
@@ -324,12 +628,27 @@ const App = {
       const advs = await API.list();
       advs.reverse();  // newest on top
       for (const a of advs) {
-        const item = h('div', {class: 'adv-item' + (a.id === this.currentId ? ' active' : '')}, [
-          h('span', {class: 'adv-id'}, a.id),
-          ' ',
-          h('span', {class: 'badge state-' + a.state}, a.state),
-          h('span', {class: 'adv-title'}, a.title || '(untitled)'),
-        ]);
+        // Derive subtitle: first sentence of a.subtitle or a.concept, max 80 chars
+        let subtitleText = a.subtitle || a.concept || '';
+        const dotIdx = subtitleText.indexOf('. ');
+        if (dotIdx !== -1) subtitleText = subtitleText.slice(0, dotIdx + 1);
+        if (subtitleText.length > 80) subtitleText = subtitleText.slice(0, 79) + '\u2026';
+
+        const children = [
+          h('div', {class: 'adv-line1'}, [
+            h('span', {class: 'badge state-' + a.state}, a.state),
+            h('span', {class: 'adv-id'}, a.id),
+            h('span', {class: 'adv-title'}, a.title || '(untitled)'),
+          ]),
+        ];
+        if (subtitleText) {
+          children.push(h('div', {class: 'adv-subtitle'}, subtitleText));
+        }
+
+        const item = h('div', {
+          class: 'adv-item' + (a.id === this.currentId ? ' active' : ''),
+          'data-testid': 'adv-item-' + a.id,
+        }, children);
         item.onclick = () => this.open(a.id);
         list.appendChild(item);
       }
@@ -340,10 +659,17 @@ const App = {
   },
 
   async open(id) {
+    this.stopPolling();
     this.currentId = id;
     this.currentTab = 'overview';
+    // Invalidate documents cache on adventure switch
+    if (this._documentsCacheId !== id) {
+      this.documentsCache = null;
+      this._documentsCacheId = id;
+      this.documentsFilter = 'all';
+    }
     document.querySelectorAll('.adv-item').forEach(el => {
-      el.classList.toggle('active', el.querySelector('.adv-id')?.textContent === id);
+      el.classList.toggle('active', el.getAttribute('data-testid') === 'adv-item-' + id);
     });
     $('#content').innerHTML = '<div class="empty">Loading ' + esc(id) + '…</div>';
     try {
@@ -355,7 +681,10 @@ const App = {
   },
 
   async reopen() {
-    if (this.currentId) await this.open(this.currentId);
+    if (this.currentId) {
+      this.documentsCache = null;   // invalidate so fresh fetch on reopen
+      await this.open(this.currentId);
+    }
   },
 
   render() {
@@ -365,49 +694,69 @@ const App = {
     const content = $('#content');
     content.innerHTML = '';
 
-    // Header
-    const header = h('div', {class: 'adv-header'}, [
-      h('span', {class: 'adv-id'}, a.id),
-      h('h1', {}, a.title),
-      h('span', {class: 'badge state-' + a.state}, a.state),
+    // --- TC progress counts (use summary if present, else count from target_conditions) ---
+    const sum = a.summary || {};
+    const tcTotal  = sum.tc_total  != null ? sum.tc_total  : (a.target_conditions ? a.target_conditions.length : 0);
+    const tcPassed = sum.tc_passed != null ? sum.tc_passed : 0;
+    const tcPct    = tcTotal ? Math.round(100 * tcPassed / tcTotal) : 0;
+
+    // --- TC progress bar element ---
+    const progressLabel = tcTotal === 0
+      ? h('span', {'class': 'progress-label', 'data-testid': 'tc-progress-label'}, 'No TCs')
+      : h('span', {'class': 'progress-label', 'data-testid': 'tc-progress-label'}, tcPassed + '/' + tcTotal + ' TCs');
+    const progressFill = h('span', {style: 'width:' + tcPct + '%'});
+    const progressBar = h('div', {'class': 'progress-inline', 'data-testid': 'tc-progress-bar'}, [
+      h('div', {class: 'progress'}, [progressFill]),
+      progressLabel,
     ]);
-    content.appendChild(header);
 
-    content.appendChild(h('div', {class: 'adv-meta'}, [
-      h('span', {}, 'Created: ' + a.created),
-      h('span', {}, 'Updated: ' + a.updated),
-      h('span', {}, 'Tasks: ' + (a.tasks ? a.tasks.length : 0)),
-    ]));
-
-    // State transition buttons
-    const transitions = STATE_TRANSITIONS[a.state] || [];
-    if (transitions.length) {
-      const btns = h('div', {class: 'btn-row'}, [
-        h('span', {style: 'align-self:center;color:var(--muted);margin-right:4px;'}, 'Transition →'),
-        ...transitions.map(s => {
-          const b = h('button', {class: s === 'cancelled' ? 'danger' : ''}, s);
-          b.onclick = () => this.transitionState(s);
-          return b;
-        }),
-      ]);
-      content.appendChild(btns);
+    // --- Primary CTA from summary.next_action ---
+    const CTA_TAB_MAP = {
+      approve_permissions: 'decisions',
+      open_plan:           'tasks',
+      resolve_blocker:     'decisions',
+      promote_concept:     'decisions',
+    };
+    let ctaEl = null;
+    const na = sum.next_action;
+    if (na && na.kind && na.kind !== 'none') {
+      const ctaTarget = CTA_TAB_MAP[na.kind] || 'overview';
+      const btn = h('button', {'class': 'cta-primary', 'data-testid': 'header-cta'}, na.label || na.kind);
+      btn.onclick = () => this.switchTab(ctaTarget);
+      ctaEl = btn;
     }
 
-    // Tabs
-    const tabs = [
-      ['overview',    'Overview'],
-      ['designs',     'Designs'      + count(a.designs)],
-      ['plans',       'Plans'        + count(a.plans)],
-      ['tasks',       'Tasks'        + count(a.tasks)],
-      ['permissions', 'Permissions'],
-      ['reviews',     'Reviews'      + count(a.reviews)],
-      ['knowledge',   'Knowledge'],
-      ['research',    'Research'     + count(a.research)],
-      ['log',         'Log'],
+    // --- Header strip ---
+    const headerChildren = [
+      h('span', {'class': 'adv-id', 'data-testid': 'header-id'}, a.id),
+      h('h1', {'data-testid': 'header-title'}, a.title),
+      h('span', {'class': 'pill state-' + a.state, 'data-testid': 'header-state-pill'}, a.state),
+      progressBar,
+    ];
+    if (ctaEl) headerChildren.push(ctaEl);
+
+    const header = h('div', {'class': 'adv-header header-strip', 'data-testid': 'adv-header'}, headerChildren);
+    content.appendChild(header);
+
+    // Meta row (compact — updated only)
+    content.appendChild(h('div', {class: 'adv-meta'}, [
+      h('span', {}, 'Updated: ' + a.updated),
+    ]));
+
+    // --- v2 Tab bar (5 tabs) ---
+    const TABS_V2 = [
+      ['overview',  'Overview'],
+      ['tasks',     'Tasks'],
+      ['documents', 'Documents'],
+      ['pipeline',  'Pipeline'],
+      ['decisions', 'Decisions'],
     ];
     const tabBar = h('div', {class: 'tabs'});
-    for (const [key, label] of tabs) {
-      const t = h('div', {class: 'tab' + (key === this.currentTab ? ' active' : '')}, label);
+    for (const [key, label] of TABS_V2) {
+      const t = h('div', {
+        class: 'tab' + (key === this.currentTab ? ' active' : ''),
+        'data-testid': 'tab-' + key,
+      }, label);
       t.onclick = () => this.switchTab(key);
       tabBar.appendChild(t);
     }
@@ -420,9 +769,13 @@ const App = {
   },
 
   switchTab(key) {
+    const KNOWN_TABS = ['overview', 'tasks', 'documents', 'pipeline', 'decisions'];
+    if (!KNOWN_TABS.includes(key)) key = 'overview';
+    this.stopPolling();
     this.currentTab = key;
-    document.querySelectorAll('.tab').forEach((el, idx) => {
-      el.classList.toggle('active', el.textContent.toLowerCase().startsWith(key.slice(0,4)));
+    document.querySelectorAll('.tab').forEach(el => {
+      el.classList.toggle('active',
+        el.getAttribute('data-testid') === 'tab-' + key);
     });
     this.renderTab();
   },
@@ -434,165 +787,945 @@ const App = {
     const a = this.currentAdv;
     const tab = this.currentTab;
 
-    if (tab === 'overview')    return pane.appendChild(this.renderOverview(a));
-    if (tab === 'designs')     return this.renderFileBrowser(pane, a.designs, `adventures/${a.id}/designs`, 'design');
-    if (tab === 'plans')       return this.renderFileBrowser(pane, a.plans, `adventures/${a.id}/plans`);
-    if (tab === 'tasks')       return pane.appendChild(this.renderTasks(a));
-    if (tab === 'permissions') return pane.appendChild(this.renderPermissions(a));
-    if (tab === 'reviews')     return pane.appendChild(this.renderReviews(a));
-    if (tab === 'knowledge')   return this.renderKnowledge(pane, a);
-    if (tab === 'research')    return this.renderFileBrowser(pane, a.research, `adventures/${a.id}/research`);
-    if (tab === 'log')         return pane.appendChild(this.renderLog(a));
+    if (tab === 'overview')  return pane.appendChild(this.renderOverview(a));
+    if (tab === 'tasks')     return pane.appendChild(this.renderTasks(a));
+    if (tab === 'documents') return pane.appendChild(this.renderDocuments(a));
+    if (tab === 'pipeline')  return pane.appendChild(this.renderPipeline(a));
+    if (tab === 'decisions') return pane.appendChild(this.renderDecisions(a));
+    // Fallback (should not reach here; switchTab guards unknown keys)
+    return pane.appendChild(this.renderOverview(a));
   },
 
   // ----- Overview -------------------------------------------------------
   renderOverview(a) {
-    const box = h('div');
-    box.appendChild(h('h3', {}, 'Concept'));
-    box.appendChild(h('div', {class: 'concept-box'}, a.concept || '(no concept recorded)'));
+    const root = h('div', {class: 'stack'});
+    root.appendChild(this.renderConceptCard(a));
+    root.appendChild(this.renderTcProgressCard(a));
+    root.appendChild(this.renderNextActionCard(a));
+    return root;
+  },
 
-    box.appendChild(h('h3', {style: 'margin-top:18px;'}, `Target Conditions (${a.target_conditions.length})`));
-    if (a.target_conditions.length === 0) {
-      box.appendChild(h('div', {class: 'empty'}, 'No target conditions defined.'));
+  renderConceptCard(a) {
+    const card = h('div', {class: 'card'});
+    card.appendChild(h('h3', {class: 'card-title'}, 'Concept'));
+
+    const conceptText = a.concept || '';
+    const parts = conceptText.split(/\n\s*\n/);
+    const first = parts[0] || '';
+    const rest  = parts.slice(1);
+
+    // If the first paragraph is too short to be meaningful, show everything inline
+    const showAll = first.length < 20;
+
+    if (showAll || rest.length === 0) {
+      const box = h('div', {class: 'concept-box'});
+      box.innerHTML = conceptText ? marked.parse(conceptText) : '(no concept recorded)';
+      card.appendChild(box);
     } else {
-      const tbl = h('table');
-      tbl.innerHTML =
-        '<thead><tr><th>ID</th><th>Description</th><th>Task(s)</th><th>Proof</th><th>Status</th></tr></thead>';
-      const tb = h('tbody');
-      for (const tc of a.target_conditions) {
-        tb.appendChild(h('tr', {}, [
-          h('td', {}, h('code', {}, tc.id)),
-          h('td', {}, tc.description),
-          h('td', {}, tc.tasks),
-          h('td', {}, h('code', {html: esc(tc.proof_command)})),
-          h('td', {}, h('span', {class: 'badge status-' + tc.status}, tc.status || '—')),
-        ]));
+      const box = h('div', {class: 'concept-box'});
+      box.innerHTML = marked.parse(first);
+      card.appendChild(box);
+
+      const details = h('details', {
+        class: 'disclosure',
+        'data-testid': 'show-details-concept',
+      });
+      details.appendChild(h('summary', {}, 'Show more'));
+      const moreBox = h('div', {class: 'concept-box'});
+      moreBox.innerHTML = marked.parse(rest.join('\n\n'));
+      details.appendChild(moreBox);
+      card.appendChild(details);
+    }
+
+    return card;
+  },
+
+  renderTcProgressCard(a) {
+    const s = a.summary || this.deriveSummary(a);
+    const tcTotal   = s.tc_total   != null ? s.tc_total   : (a.target_conditions ? a.target_conditions.length : 0);
+    const tcPassed  = s.tc_passed  != null ? s.tc_passed  : 0;
+    const tcFailed  = s.tc_failed  != null ? s.tc_failed  : 0;
+    const tcPending = s.tc_pending != null ? s.tc_pending : 0;
+    const pct = tcTotal ? Math.round(100 * tcPassed / tcTotal) : 0;
+
+    const card = h('div', {class: 'card'});
+    card.appendChild(h('h3', {class: 'card-title'}, 'Target Conditions'));
+
+    const progressBar = h('div', {
+      class: 'progress',
+      'data-testid': 'tc-progress-bar',
+      title: tcPassed + ' passed · ' + tcFailed + ' failed · ' + tcPending + ' pending',
+    });
+    progressBar.appendChild(h('span', {style: 'width:' + pct + '%'}));
+    card.appendChild(progressBar);
+
+    const labelText = tcTotal === 0
+      ? 'No TCs'
+      : (tcPassed + ' / ' + tcTotal + ' passed · ' + tcFailed + ' failed · ' + tcPending + ' pending');
+    const label = h('div', {
+      class: 'tc-progress-label',
+      'data-testid': 'tc-progress-label',
+      title: labelText,
+    }, labelText);
+    card.appendChild(label);
+
+    const tcs = a.target_conditions || [];
+
+    if (tcs.length === 0) {
+      card.appendChild(h('div', {class: 'empty'}, 'No target conditions defined.'));
+      return card;
+    }
+
+    // Preview: up to 5 non-passing TCs, failed first then pending
+    const nonPassing = tcs.filter(tc => tc.status !== 'passed' && tc.status !== 'PASSED');
+    nonPassing.sort((ta, tb) => {
+      const rank = s => (s === 'failed' || s === 'FAILED') ? 0 : 1;
+      return rank(ta.status) - rank(tb.status);
+    });
+    const preview = nonPassing.slice(0, 5);
+
+    if (preview.length > 0) {
+      const previewList = h('div', {style: 'margin-top:8px;'});
+      for (const tc of preview) {
+        const desc = (tc.description || '').length > 80
+          ? tc.description.slice(0, 79) + '\u2026'
+          : (tc.description || '');
+        const row = h('div', {class: 'tc-row'}, [
+          h('span', {class: 'pill status-' + (tc.status || 'pending')}, tc.status || 'pending'),
+          h('code', {}, tc.id),
+          document.createTextNode(desc),
+        ]);
+        previewList.appendChild(row);
       }
-      tbl.appendChild(tb);
-      box.appendChild(tbl);
+      card.appendChild(previewList);
     }
 
-    if (a.adventure_report) {
-      box.appendChild(h('h3', {style: 'margin-top:18px;'}, 'Adventure Report'));
-      const btn = h('button', {}, 'Open report-adventure synthesis');
-      btn.onclick = () => this.currentTab = 'reviews' && this.switchTab('reviews');
-      box.appendChild(btn);
+    // Show all TCs disclosure with full table
+    const details = h('details', {
+      class: 'disclosure',
+      'data-testid': 'show-details-tcs',
+      style: 'margin-top:8px;',
+    });
+    details.appendChild(h('summary', {}, 'Show all TCs'));
+
+    const tbl = h('table');
+    tbl.innerHTML = '<thead><tr><th>ID</th><th>Description</th><th>Task(s)</th><th>Proof</th><th>Status</th></tr></thead>';
+    const tb = h('tbody');
+    for (const tc of tcs) {
+      tb.appendChild(h('tr', {}, [
+        h('td', {}, h('code', {}, tc.id)),
+        h('td', {}, tc.description),
+        h('td', {}, tc.tasks),
+        h('td', {}, h('code', {html: esc(tc.proof_command)})),
+        h('td', {}, h('span', {class: 'badge status-' + tc.status}, tc.status || '—')),
+      ]));
+    }
+    tbl.appendChild(tb);
+    details.appendChild(tbl);
+    card.appendChild(details);
+
+    return card;
+  },
+
+  renderNextActionCard(a) {
+    const na = (a.summary && a.summary.next_action) || this.deriveNextAction(a);
+
+    const card = h('div', {class: 'card', 'data-testid': 'next-action-card'});
+    card.appendChild(h('h3', {class: 'card-title'}, na.title || 'No action required.'));
+
+    if (na.kind && na.kind !== 'none' && na.label) {
+      const btn = h('button', {'data-testid': 'next-action-button'}, na.label);
+      btn.onclick = () => {
+        switch (na.kind) {
+          case 'promote_concept':
+            API.setState(a.id, 'planning')
+               .then(() => { toast('State → planning', 'ok'); this.reopen(); })
+               .catch(e => toast('Error: ' + e, 'error'));
+            break;
+          case 'approve_permissions':
+          case 'open_plan':
+          case 'resolve_blocker':
+            this.switchTab('decisions');
+            break;
+          case 'open_tasks':
+            this.switchTab('tasks');
+            break;
+          case 'open_report':
+            this.switchTab('documents');
+            break;
+          default:
+            this.switchTab('overview');
+        }
+      };
+      card.appendChild(btn);
     }
 
-    return box;
+    return card;
+  },
+
+  // ----- Fallback helpers (decouple T007 from T003 backend field) --------
+  deriveSummary(a) {
+    const tcs = a.target_conditions || [];
+    const tc_passed  = tcs.filter(t => t.status === 'passed'  || t.status === 'PASSED').length;
+    const tc_failed  = tcs.filter(t => t.status === 'failed'  || t.status === 'FAILED').length;
+    const tc_pending = tcs.filter(t => t.status !== 'passed'  && t.status !== 'PASSED' &&
+                                       t.status !== 'failed'  && t.status !== 'FAILED').length;
+    const tasks_by_status = {};
+    for (const t of (a.tasks || [])) {
+      tasks_by_status[t.status] = (tasks_by_status[t.status] || 0) + 1;
+    }
+    return {
+      tc_total: tcs.length,
+      tc_passed,
+      tc_failed,
+      tc_pending,
+      tasks_by_status,
+      next_action: this.deriveNextAction(a),
+    };
+  },
+
+  deriveNextAction(a) {
+    const inProgress = ((a.tasks || []).filter(t => t.status === 'in_progress')).length;
+    const reason = (a.blocked_reason) || 'unknown reason';
+    const completedAt = a.completed_at || 'unknown date';
+    switch (a.state) {
+      case 'concept':
+        return { kind: 'promote_concept',     title: 'Concept awaiting promotion.',            label: 'Start planning' };
+      case 'planning':
+        return { kind: 'open_plan',            title: 'Planning in progress.',                 label: 'Open Decisions' };
+      case 'review':
+        return { kind: 'approve_permissions',  title: 'Awaiting Checkpoint 2 approval.',       label: 'Approve permissions' };
+      case 'active':
+        return { kind: 'open_tasks',           title: inProgress + ' tasks in progress.',      label: 'Open Tasks' };
+      case 'blocked':
+        return { kind: 'resolve_blocker',      title: 'Blocked by ' + reason + '.',            label: 'Open Decisions' };
+      case 'completed':
+        return { kind: 'open_report',          title: 'Completed on ' + completedAt + '.',     label: 'Read report' };
+      default:
+        return { kind: 'none',                 title: 'No action required.',                   label: '' };
+    }
   },
 
   // ----- Tasks ----------------------------------------------------------
+
+  // Parse task markdown into sections: frontmatter, description, acceptance, log, raw
+  parseTaskSections(src) {
+    const raw = src || '';
+    let frontmatter = '';
+    let body = raw;
+
+    // Split out YAML frontmatter between --- fences
+    const fmMatch = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
+    if (fmMatch) {
+      frontmatter = fmMatch[1];
+      body = fmMatch[2];
+    }
+
+    // Section splitter: find ## heading positions
+    const lines = body.split('\n');
+    let currentSection = null;
+    const sectionLines = {};
+
+    for (const line of lines) {
+      const m = line.match(/^## (.+)$/);
+      if (m) {
+        currentSection = m[1].trim();
+        sectionLines[currentSection] = [];
+      } else if (currentSection !== null) {
+        sectionLines[currentSection] = sectionLines[currentSection] || [];
+        sectionLines[currentSection].push(line);
+      }
+    }
+
+    // Extract sections as trimmed text
+    const getSection = name => {
+      const ls = sectionLines[name];
+      if (!ls) return null;
+      return ls.join('\n').trim();
+    };
+
+    const description = getSection('Description');
+    const acceptanceSrc = getSection('Acceptance Criteria');
+    const logSrc = getSection('Log');
+
+    // Parse acceptance criteria into array of lines
+    let acceptance = [];
+    if (acceptanceSrc) {
+      acceptance = acceptanceSrc.split('\n').filter(l => l.trim().length > 0);
+    }
+
+    return { frontmatter, description, acceptance, log: logSrc || '', raw };
+  },
+
   renderTasks(a) {
     const box = h('div');
-    if (!a.tasks.length) return h('div', {class: 'empty'}, 'No tasks.');
-    const tbl = h('table');
-    tbl.innerHTML = '<thead><tr><th>ID</th><th>Title</th><th>Stage</th><th>Status</th><th>Assignee</th><th>Iter</th><th>TCs</th></tr></thead>';
-    const tb = h('tbody');
-    for (const t of a.tasks) {
-      const row = h('tr', {}, [
-        h('td', {}, h('code', {}, t.id)),
-        h('td', {}, t.title),
-        h('td', {}, h('span', {class: 'badge status-' + t.stage}, t.stage)),
-        h('td', {}, h('span', {class: 'badge status-' + t.status}, t.status)),
-        h('td', {}, t.assignee),
-        h('td', {}, String(t.iterations)),
-        h('td', {}, (t.target_conditions || []).join(', ')),
-      ]);
-      row.style.cursor = 'pointer';
-      row.onclick = () => this.openTaskDetail(t);
-      tb.appendChild(row);
+
+    if (!a.tasks || !a.tasks.length) {
+      box.appendChild(h('div', {class: 'empty'}, 'No tasks.'));
+      return box;
     }
-    tbl.appendChild(tb);
-    box.appendChild(tbl);
-    const detail = h('div', {id: 'task-detail'});
+
+    const BUCKET_ORDER = ['pending', 'in_progress', 'passed', 'failed', 'done'];
+    const buckets = {};
+    for (const status of BUCKET_ORDER) buckets[status] = [];
+    const otherBucket = [];
+
+    for (const t of a.tasks) {
+      const s = t.status || 'pending';
+      if (BUCKET_ORDER.includes(s)) {
+        buckets[s].push(t);
+      } else {
+        otherBucket.push(t);
+      }
+    }
+
+    let hasAny = false;
+    for (const status of BUCKET_ORDER) {
+      const tasks = buckets[status];
+      if (!tasks.length) continue;
+      hasAny = true;
+      const label = status.replace(/_/g, ' ');
+      const section = h('div', {
+        class: 'task-bucket stack',
+        'data-testid': 'task-bucket-' + status,
+      });
+      section.appendChild(h('h3', {}, label + ' (' + tasks.length + ')'));
+      for (const t of tasks) {
+        section.appendChild(this.renderTaskCard(t, a));
+      }
+      box.appendChild(section);
+    }
+
+    if (otherBucket.length) {
+      hasAny = true;
+      const section = h('div', {
+        class: 'task-bucket stack',
+        'data-testid': 'task-bucket-other',
+      });
+      section.appendChild(h('h3', {}, 'Other (' + otherBucket.length + ')'));
+      for (const t of otherBucket) {
+        section.appendChild(this.renderTaskCard(t, a));
+      }
+      box.appendChild(section);
+    }
+
+    if (!hasAny) {
+      box.appendChild(h('div', {class: 'empty'}, 'No tasks.'));
+    }
+
+    // Detail panel target (shared anchor for expanded detail)
+    const detail = h('div', {
+      id: 'task-detail',
+      'data-testid': 'task-detail',
+    });
     box.appendChild(detail);
+
     return box;
   },
 
-  async openTaskDetail(t) {
+  renderTaskCard(t, a) {
+    const card = h('div', {
+      class: 'card task-card',
+      'data-testid': 'task-card-' + t.id,
+    });
+
+    // Top row: status pill + ID + stage
+    const top = h('div', {class: 'task-card-top'});
+    top.appendChild(h('span', {class: 'pill status-' + (t.status || 'pending')}, t.status || 'pending'));
+    top.appendChild(h('span', {class: 'task-card-id'}, t.id));
+    top.appendChild(h('span', {class: 'task-card-stage'}, t.stage || ''));
+    card.appendChild(top);
+
+    // Title
+    card.appendChild(h('div', {class: 'card-title'}, t.title || '(untitled)'));
+
+    // Meta row: depends_on and TCs
+    const tcs = t.target_conditions || [];
+    const deps = t.depends_on || [];
+    if (deps.length || tcs.length) {
+      const meta = h('div', {class: 'task-card-meta'});
+      if (deps.length) {
+        meta.appendChild(h('span', {}, 'depends_on: ' + deps.join(' \u00b7 ')));
+      }
+      if (tcs.length) {
+        meta.appendChild(h('span', {}, 'TCs: ' + tcs.join(', ')));
+      }
+      card.appendChild(meta);
+    }
+
+    card.onclick = () => this.openTaskDetail(t, a);
+    return card;
+  },
+
+  async openTaskDetail(t, a) {
+    // Mark active card, clear siblings
+    document.querySelectorAll('.task-card').forEach(el => {
+      el.classList.toggle('active', el.getAttribute('data-testid') === 'task-card-' + t.id);
+    });
+
     const detail = $('#task-detail');
     if (!detail) return;
     detail.innerHTML = '<div class="empty">Loading ' + esc(t.id) + '…</div>';
+    detail.scrollIntoView({block: 'nearest'});
+
     try {
       const txt = await API.file(t.file);
+      const sections = this.parseTaskSections(txt);
       detail.innerHTML = '';
-      const view = h('div', {class: 'file-view', style: 'margin-top:14px;'});
-      view.innerHTML = marked.parse(txt);
-      detail.appendChild(h('h3', {style: 'margin-top:18px;'}, 'Task: ' + t.id));
-      detail.appendChild(view);
+
+      const panel = h('div', {class: 'stack', style: 'margin-top:14px;'});
+
+      // 1. Status strip (card with the fields hidden from the card view)
+      const statusCard = h('div', {class: 'card task-detail-section'});
+      const statusTop = h('div', {class: 'task-card-top', style: 'flex-wrap:wrap; gap:8px;'});
+      statusTop.appendChild(h('span', {class: 'pill status-' + (t.status || 'pending')}, t.status || 'pending'));
+      statusTop.appendChild(h('span', {class: 'chip'}, 'stage: ' + (t.stage || '—')));
+      if (t.assignee) {
+        statusTop.appendChild(h('span', {class: 'badge'}, t.assignee));
+      }
+      statusTop.appendChild(h('span', {class: 'card-meta'}, 'iterations: ' + (t.iterations != null ? t.iterations : '0')));
+      statusCard.appendChild(statusTop);
+      panel.appendChild(statusCard);
+
+      // 2. Depends-on chain
+      const deps = t.depends_on || [];
+      if (deps.length) {
+        const depsCard = h('div', {class: 'card task-detail-section'});
+        depsCard.appendChild(h('div', {class: 'card-meta', style: 'margin-bottom:6px;'}, 'Depends on'));
+        const chain = h('div', {class: 'depends-chain'});
+        for (let i = 0; i < deps.length; i++) {
+          const depId = deps[i];
+          const depTask = (a.tasks || []).find(x => x.id === depId);
+          const depStatus = depTask ? (depTask.status || 'pending') : 'pending';
+          const node = h('span', {class: 'depends-node'}, [
+            h('span', {class: 'status-dot status-' + depStatus}),
+            document.createTextNode(depId),
+          ]);
+          chain.appendChild(node);
+          if (i < deps.length - 1) {
+            chain.appendChild(h('span', {class: 'depends-arrow'}, '\u2192'));
+          }
+        }
+        chain.appendChild(h('span', {class: 'depends-arrow'}, '\u2192'));
+        chain.appendChild(h('span', {class: 'depends-node', style: 'border-color:var(--accent);'}, [
+          h('span', {class: 'status-dot status-' + (t.status || 'pending')}),
+          document.createTextNode(t.id + ' (this)'),
+        ]));
+        depsCard.appendChild(chain);
+        panel.appendChild(depsCard);
+      }
+
+      // 3. TC checklist
+      const tcIds = t.target_conditions || [];
+      if (tcIds.length) {
+        const tcCard = h('div', {class: 'card task-detail-section'});
+        tcCard.appendChild(h('h3', {class: 'card-title'}, 'Target Conditions'));
+        const allTcs = a.target_conditions || [];
+        for (const tcId of tcIds) {
+          const tc = allTcs.find(x => x.id === tcId);
+          const tcStatus = tc ? (tc.status || 'pending') : 'pending';
+          const isPassed = tcStatus === 'passed' || tcStatus === 'PASSED';
+          const isFailed = tcStatus === 'failed' || tcStatus === 'FAILED';
+          const rowClass = 'tc-checklist-row' + (isFailed ? ' status-failed' : '');
+          const row = h('label', {
+            class: rowClass,
+            'data-testid': 'tc-row-' + tcId,
+          });
+          const cb = h('input', {type: 'checkbox', disabled: 'disabled'});
+          if (isPassed) cb.setAttribute('checked', 'checked');
+          row.appendChild(cb);
+          row.appendChild(h('code', {}, tcId));
+          row.appendChild(document.createTextNode(tc ? ' — ' + (tc.description || '') : ' (unknown TC)'));
+          tcCard.appendChild(row);
+        }
+        panel.appendChild(tcCard);
+      }
+
+      // 4. Description card
+      if (sections.description) {
+        const descCard = h('div', {class: 'card task-detail-section'});
+        descCard.appendChild(h('h3', {class: 'card-title'}, 'Description'));
+        const prose = h('div');
+        prose.innerHTML = marked.parse(sections.description);
+        descCard.appendChild(prose);
+        panel.appendChild(descCard);
+      }
+
+      // 5. Acceptance Criteria
+      if (sections.acceptance && sections.acceptance.length) {
+        const acCard = h('div', {class: 'card task-detail-section'});
+        acCard.appendChild(h('h3', {class: 'card-title'}, 'Acceptance Criteria'));
+        const ul = h('ul', {class: 'ac-list'});
+        for (const line of sections.acceptance) {
+          const li = h('li');
+          const checkMatch = line.match(/^-\s+\[([ xX])\]\s+(.*)$/);
+          if (checkMatch) {
+            const checked = checkMatch[1].toLowerCase() === 'x';
+            const cb = h('input', {type: 'checkbox', disabled: 'disabled'});
+            if (checked) cb.setAttribute('checked', 'checked');
+            li.appendChild(cb);
+            li.appendChild(document.createTextNode(' ' + checkMatch[2]));
+          } else {
+            const txt2 = line.replace(/^-\s*/, '').trim();
+            li.appendChild(document.createTextNode(txt2 || line));
+          }
+          ul.appendChild(li);
+        }
+        acCard.appendChild(ul);
+        panel.appendChild(acCard);
+      }
+
+      // 6. Show details disclosure: frontmatter + file path + log + raw
+      const disclosure = h('details', {class: 'disclosure'});
+      const summary = h('summary', {'data-testid': 'task-show-details'}, 'Show details');
+      disclosure.appendChild(summary);
+      const discBody = h('div', {class: 'stack', style: 'padding:10px 12px;'});
+
+      if (sections.frontmatter) {
+        discBody.appendChild(h('pre', {}, sections.frontmatter));
+      }
+      discBody.appendChild(h('div', {class: 'card-meta'}, 'File: ' + (t.file || '(unknown)')));
+
+      if (sections.log) {
+        discBody.appendChild(h('pre', {class: 'log-tail'}, sections.log));
+      }
+
+      discBody.appendChild(h('pre', {}, sections.raw));
+
+      disclosure.appendChild(discBody);
+      panel.appendChild(disclosure);
+
+      detail.appendChild(panel);
     } catch (e) {
       detail.innerHTML = '<div class="empty" style="color:var(--err);">Error: ' + esc(e) + '</div>';
     }
   },
 
-  // ----- File browsers (designs / plans / research) --------------------
-  renderFileBrowser(pane, files, dirRel, kind) {
-    if (!files || !files.length) {
-      pane.appendChild(h('div', {class: 'empty'}, 'No files.'));
-      return;
-    }
-    const split = h('div', {class: 'split'});
-    const list  = h('div', {class: 'file-list'});
-    const view  = h('div', {class: 'file-view'}, h('div', {class: 'empty'}, 'Select a file.'));
-    split.appendChild(list);
-    split.appendChild(view);
-    pane.appendChild(split);
+  // ----- Documents (ADV009-T009) ----------------------------------------
+  renderDocuments(a) {
+    const root = h('div', {'data-testid': 'pane-documents'});
 
-    const approved = new Set();  // track approved designs visually (best effort)
+    // Loading placeholder shown while fetch is in flight
+    const loadingEl = h('div', {class: 'empty'}, 'Loading documents…');
+    root.appendChild(loadingEl);
 
-    for (const f of files) {
-      const name = f.replace(/\.md$/, '');
-      const row = h('div', {class: 'file-entry'});
-      row.appendChild(h('span', {}, name));
-      if (kind === 'design') {
-        const btn = h('button', {class: 'secondary', style: 'padding:2px 8px;font-size:10px;'}, 'Approve');
-        btn.onclick = async (ev) => {
-          ev.stopPropagation();
-          try {
-            const r = await API.approveDes(this.currentAdv.id, f);
-            toast('Design approved: ' + f, 'ok');
-            approved.add(f);
-            btn.textContent = '✓';
-            btn.disabled = true;
-            this.reopen();
-          } catch (e) { toast('Error: ' + e, 'error'); }
+    const KINDS = ['all', 'design', 'plan', 'research', 'review'];
+    const LABELS = {all: 'All', design: 'Designs', plan: 'Plans', research: 'Research', review: 'Reviews'};
+
+    const doRender = (docs) => {
+      root.innerHTML = '';
+
+      // Chip bar
+      const chipBar = h('div', {'class': 'chip-bar', 'data-testid': 'documents-chips', 'role': 'tablist'});
+      for (const kind of KINDS) {
+        const btn = h('button', {
+          'class': 'chip' + (this.documentsFilter === kind ? ' active' : ''),
+          'data-testid': 'chip-' + kind,
+          'role': 'tab',
+          'tabindex': '0',
+          'aria-selected': this.documentsFilter === kind ? 'true' : 'false',
+        }, LABELS[kind]);
+        btn.onclick = () => {
+          this.documentsFilter = kind;
+          // Update chips
+          chipBar.querySelectorAll('.chip').forEach(el => {
+            const active = el.getAttribute('data-testid') === 'chip-' + kind;
+            el.classList.toggle('active', active);
+            el.setAttribute('aria-selected', active ? 'true' : 'false');
+          });
+          renderDocList(listEl, viewEl, docs);
         };
-        row.appendChild(btn);
+        btn.onkeydown = (e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); btn.click(); }
+        };
+        chipBar.appendChild(btn);
       }
-      row.onclick = async () => {
-        document.querySelectorAll('.file-entry').forEach(el => el.classList.remove('active'));
-        row.classList.add('active');
-        view.innerHTML = '<div class="empty">Loading…</div>';
-        try {
-          const txt = await API.file(`.agent/${dirRel}/${f}`);
-          view.innerHTML = marked.parse(txt);
-        } catch (e) {
-          view.innerHTML = '<div class="empty" style="color:var(--err);">Error: ' + esc(e) + '</div>';
+      root.appendChild(chipBar);
+
+      // Two-column layout
+      const layout = h('div', {class: 'doc-layout'});
+      const listEl = h('div', {'class': 'doc-list-col stack', 'data-testid': 'documents-list'});
+      const viewEl = h('div', {'class': 'doc-view'}, h('div', {class: 'empty'}, 'Select a document.'));
+      layout.appendChild(listEl);
+      layout.appendChild(viewEl);
+      root.appendChild(layout);
+
+      renderDocList(listEl, viewEl, docs);
+    };
+
+    const renderDocList = (listEl, viewEl, docs) => {
+      listEl.innerHTML = '';
+
+      const filter = this.documentsFilter;
+      let filtered = filter === 'all' ? docs : docs.filter(d => d.kind === filter);
+
+      // Sort: reviews by task_id desc, else alphabetical
+      filtered = filtered.slice().sort((a, b) => {
+        if (a.kind === 'review' && b.kind === 'review') {
+          return (b.task_id || '').localeCompare(a.task_id || '');
         }
-      };
-      list.appendChild(row);
-    }
-    // auto-select first
-    list.firstChild?.click();
+        return (a.name || '').localeCompare(b.name || '');
+      });
+
+      if (!filtered.length) {
+        listEl.appendChild(h('div', {class: 'empty'}, 'No documents.'));
+        viewEl.innerHTML = '';
+        viewEl.appendChild(h('div', {class: 'empty'}, 'Nothing to show.'));
+        return;
+      }
+
+      for (const doc of filtered) {
+        const row = this.renderDocumentRow(doc, () => {
+          listEl.querySelectorAll('.doc-row').forEach(el => el.classList.remove('active'));
+          row.classList.add('active');
+          this.openDocDetail(doc, a, viewEl);
+        });
+        listEl.appendChild(row);
+      }
+    };
+
+    // Fetch or use cache
+    const fetchDocs = async () => {
+      try {
+        if (!this.documentsCache || this._documentsCacheId !== a.id) {
+          const docs = await API.documents(a.id);
+          if (this._documentsCacheId === a.id) {
+            this.documentsCache = docs;
+          }
+        }
+        doRender(this.documentsCache || []);
+      } catch (e) {
+        root.innerHTML = '';
+        root.appendChild(h('div', {class: 'card'}, [
+          h('div', {style: 'color:var(--err);'}, 'Failed to load documents: ' + esc(String(e))),
+          h('div', {class: 'card-meta', style: 'margin-top:6px;'}, 'Check that the server is running and /api/adventures/' + a.id + '/documents is available.'),
+        ]));
+      }
+    };
+    fetchDocs();
+
+    return root;
   },
 
-  // ----- Permissions ----------------------------------------------------
-  renderPermissions(a) {
-    const box = h('div');
-    if (!a.permissions) {
-      box.appendChild(h('div', {class: 'empty'}, 'No permissions.md file for this adventure.'));
-      return box;
+  renderDocumentRow(doc, onOpen) {
+    const kind = doc.kind || 'design';
+    const name = doc.name || (doc.path || '').replace(/\.md$/, '');
+    // subtitle per type
+    let sub = doc.one_liner || '';
+    if (!sub && kind === 'plan' && doc.task_count != null) sub = doc.task_count + ' tasks' + (doc.waves ? ', ' + doc.waves + ' waves' : '');
+
+    const row = h('div', {
+      'class': 'card doc-row',
+      'data-type': kind,
+      'data-testid': 'doc-row-' + name,
+    });
+
+    const pillClasses = 'pill type-' + kind +
+      (kind === 'review' && doc.status ? ' status-' + doc.status : '');
+    row.appendChild(h('span', {class: pillClasses}, LABELS_DOC[kind] || kind));
+
+    const body = h('div', {class: 'doc-row-body'});
+    body.appendChild(h('span', {class: 'doc-title'}, name));
+    if (sub) body.appendChild(h('span', {class: 'doc-sub'}, sub));
+    row.appendChild(body);
+
+    if (kind === 'review' && doc.status) {
+      row.appendChild(h('span', {class: 'pill status-' + doc.status, style: 'margin-left:auto; flex-shrink:0;'}, doc.status));
     }
+
+    row.onclick = onOpen;
+    return row;
+  },
+
+  async openDocDetail(doc, a, viewEl) {
+    viewEl.innerHTML = '';
+    viewEl.appendChild(h('div', {class: 'empty'}, 'Loading…'));
+    try {
+      const kind = doc.kind || 'design';
+      const dir = kind === 'research' ? 'research' : kind + 's';
+      const filePath = `.agent/adventures/${a.id}/${dir}/${doc.path || doc.name + '.md'}`;
+      const text = await API.file(filePath);
+      viewEl.innerHTML = '';
+      const renderers = {
+        design:   this.renderDesignDoc.bind(this),
+        plan:     this.renderPlanDoc.bind(this),
+        research: this.renderResearchDoc.bind(this),
+        review:   this.renderReviewDoc.bind(this),
+      };
+      const fn = renderers[kind] || renderers.design;
+      fn(doc, text, viewEl, a);
+    } catch (e) {
+      viewEl.innerHTML = '';
+      viewEl.appendChild(h('div', {class: 'empty', style: 'color:var(--err);'}, 'Error: ' + esc(String(e))));
+    }
+  },
+
+  renderDesignDoc(doc, text, viewEl, a) {
+    const sections = splitSections(text);
+
+    // Parse one-liner from ## Overview
+    const overviewBody = sections['Overview'] || '';
+    let oneLiner = '';
+    // Take the first sentence
+    const firstLine = overviewBody.replace(/\r?\n/g, ' ').trim();
+    const sentMatch = firstLine.match(/^(.+?[.!?])\s/);
+    oneLiner = sentMatch ? sentMatch[1] : firstLine;
+    if (oneLiner.length > 160) oneLiner = oneLiner.slice(0, 159) + '\u2026';
+    if (!oneLiner) oneLiner = 'This design documents ' + (doc.name || doc.path);
+
+    // Header card
+    const headerCard = h('div', {class: 'card design-header'});
+    const headerText = h('div', {class: 'design-header-text'});
+    headerText.appendChild(h('strong', {}, 'What this design decides:'));
+    headerText.appendChild(h('p', {}, oneLiner));
+    headerCard.appendChild(headerText);
+
+    // Approve button
+    if (doc.approved !== true) {
+      const approveBtn = h('button', {class: 'secondary', style: 'flex-shrink:0; align-self:flex-start;'}, 'Approve');
+      approveBtn.onclick = async () => {
+        try {
+          await API.approveDes(a.id, doc.path || (doc.name + '.md'));
+          toast('Design approved', 'ok');
+          approveBtn.textContent = '✓ Approved';
+          approveBtn.disabled = true;
+          this.documentsCache = null;
+        } catch (e) { toast('Error: ' + e, 'error'); }
+      };
+      headerCard.appendChild(approveBtn);
+    }
+    viewEl.appendChild(headerCard);
+
+    // Build stripped body: remove Overview, Target Conditions, Target Files
+    const STRIP = ['Overview', 'Target Conditions', 'Target Files'];
+    const bodyParts = [];
+    for (const [heading, body] of Object.entries(sections)) {
+      if (STRIP.includes(heading)) continue;
+      bodyParts.push('## ' + heading + '\n\n' + body);
+    }
+    const bodyMd = bodyParts.join('\n\n');
+
+    // Two-column layout: main + rail
+    const layout = h('div', {class: 'design-layout'});
+    const main = h('div');
+    main.innerHTML = bodyMd ? marked.parse(bodyMd) : '<div class="empty">No body.</div>';
+    layout.appendChild(main);
+
+    // Rail
+    const rail = h('div', {class: 'design-rail'});
+    const tcBody = sections['Target Conditions'] || '';
+    if (tcBody) {
+      const tcCard = h('div', {class: 'card'});
+      tcCard.appendChild(h('h4', {}, 'Target Conditions'));
+      const ul = h('ul', {style: 'margin:0;padding:0;'});
+      tcBody.split('\n').forEach(line => {
+        const txt = line.replace(/^[-*]\s*/, '').trim();
+        if (txt) ul.appendChild(h('li', {}, txt));
+      });
+      tcCard.appendChild(ul);
+      rail.appendChild(tcCard);
+    }
+    const tfBody = sections['Target Files'] || '';
+    if (tfBody) {
+      const tfCard = h('div', {class: 'card'});
+      tfCard.appendChild(h('h4', {}, 'Target Files'));
+      const ul = h('ul', {style: 'margin:0;padding:0;'});
+      tfBody.split('\n').forEach(line => {
+        const txt = line.replace(/^[-*]\s*/, '').trim();
+        if (txt) ul.appendChild(h('li', {}, h('code', {}, txt)));
+      });
+      tfCard.appendChild(ul);
+      rail.appendChild(tfCard);
+    }
+    layout.appendChild(rail);
+    viewEl.appendChild(layout);
+  },
+
+  renderPlanDoc(doc, text, viewEl) {
+    const sections = splitSections(text);
+
+    // Check for wave/phase sections
+    const waveKeys = Object.keys(sections).filter(k => /^(Wave|Phase)\s+\S+/i.test(k));
+
+    if (waveKeys.length > 0) {
+      for (const waveKey of waveKeys) {
+        const waveBody = sections[waveKey];
+        const group = h('section', {class: 'wave-group'});
+        group.appendChild(h('h3', {class: 'wave-title'}, waveKey));
+
+        // Parse ### task sub-sections within this wave body
+        const taskCards = parsePlanTaskCards(waveBody);
+        if (taskCards.length) {
+          for (const tc of taskCards) {
+            const card = h('div', {class: 'card'});
+            card.appendChild(h('strong', {}, tc.title));
+            if (tc.summary) card.appendChild(h('div', {class: 'doc-sub'}, tc.summary));
+            group.appendChild(card);
+          }
+        } else {
+          const prose = h('div');
+          prose.innerHTML = marked.parse(waveBody);
+          group.appendChild(prose);
+        }
+        viewEl.appendChild(group);
+      }
+    } else {
+      // No waves — look for ## Tasks section with ### subsections
+      const taskBody = sections['Tasks'] || '';
+      const taskCards = parsePlanTaskCards(taskBody);
+      if (taskCards.length) {
+        for (const tc of taskCards) {
+          const card = h('div', {class: 'card', style: 'margin-bottom:8px;'});
+          card.appendChild(h('strong', {}, tc.title));
+          if (tc.summary) card.appendChild(h('div', {class: 'doc-sub'}, tc.summary));
+          viewEl.appendChild(card);
+        }
+      } else {
+        // Fallback: plain markdown
+        const prose = h('div');
+        prose.innerHTML = marked.parse(text);
+        viewEl.appendChild(prose);
+      }
+    }
+  },
+
+  renderResearchDoc(doc, text, viewEl) {
+    const tagStrip = h('div', {style: 'margin-bottom:10px;'});
+    tagStrip.appendChild(h('span', {class: 'pill type-research'}, 'research'));
+    viewEl.appendChild(tagStrip);
+    const prose = h('div');
+    prose.innerHTML = marked.parse(text);
+    viewEl.appendChild(prose);
+  },
+
+  renderReviewDoc(doc, text, viewEl) {
+    // Parse frontmatter for status / timestamp
+    let fmStatus = doc.status || 'UNKNOWN';
+    let fmTimestamp = '';
+    const fmMatch = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+    if (fmMatch) {
+      const fm = fmMatch[1];
+      const statusLine = fm.match(/^status:\s*(.+)$/m);
+      if (statusLine) fmStatus = statusLine[1].trim();
+      const tsLine = fm.match(/^(?:completed_at|updated):\s*(.+)$/m);
+      if (tsLine) fmTimestamp = tsLine[1].trim();
+    }
+    if (fmStatus === 'UNKNOWN' && doc.status) fmStatus = doc.status;
+
+    // Status strip
+    const strip = h('div', {class: 'card review-strip'});
+    strip.appendChild(h('strong', {}, doc.task_id || doc.name || ''));
+    strip.appendChild(h('span', {class: 'pill status-' + fmStatus}, fmStatus));
+    if (fmTimestamp) strip.appendChild(h('span', {class: 'muted'}, fmTimestamp));
+    viewEl.appendChild(strip);
+
+    // Summary table → kv-strip
+    const sections = splitSections(text);
+    const summaryMd = sections['Summary'] || '';
+    const kvPairs = parseSummaryTable(summaryMd);
+    if (kvPairs && Object.keys(kvPairs).length) {
+      const kvStrip = h('div', {class: 'kv-strip card'});
+      for (const [k, v] of Object.entries(kvPairs)) {
+        const pair = h('span', {class: 'kv-pair'});
+        pair.appendChild(h('span', {class: 'kv-key'}, k + ':'));
+        pair.appendChild(h('code', {class: 'kv-val'}, v));
+        kvStrip.appendChild(pair);
+      }
+      viewEl.appendChild(kvStrip);
+    }
+
+    // Issues list
+    const issuesMd = sections['Issues'] || '';
+    const issues = parseIssuesList(issuesMd);
+    if (issues.length) {
+      const ul = h('ul', {class: 'issues-list'});
+      for (const issue of issues) {
+        ul.appendChild(h('li', {'class': 'issue sev-' + issue.severity}, issue.text));
+      }
+      viewEl.appendChild(ul);
+    }
+
+    // Full disclosure
+    const disclosure = h('details', {class: 'disclosure'});
+    disclosure.appendChild(h('summary', {}, 'Show full review \u25b8'));
+    const body = h('div');
+    body.innerHTML = marked.parse(text);
+    disclosure.appendChild(body);
+    viewEl.appendChild(disclosure);
+  },
+
+  // ----- Decisions (ADV009-T010) ----------------------------------------
+  renderDecisions(a) {
+    const root = h('div', {'class': 'stack', 'data-testid': 'pane-decisions'});
+
+    const stateCard = this.renderStateTransitionCard(a);
+    const permCard  = this.renderPermissionsCard(a);
+    const kbCard    = this.renderKnowledgeCard(a);
+
+    let anyCard = false;
+    if (stateCard) { root.appendChild(stateCard); anyCard = true; }
+    if (permCard)  { root.appendChild(permCard);  anyCard = true; }
+    if (kbCard)    { root.appendChild(kbCard);    anyCard = true; }
+
+    if (!anyCard) {
+      root.appendChild(h('div', {'class': 'empty', 'data-testid': 'decisions-empty'}, 'No pending decisions.'));
+    }
+
+    return root;
+  },
+
+  renderStateTransitionCard(a) {
+    const transitions = STATE_TRANSITIONS[a.state] || [];
+    if (!transitions.length) return null;
+
+    const card = h('div', {'class': 'card', 'data-testid': 'decisions-state-card'});
+    card.appendChild(h('h3', {class: 'card-title'}, 'State Transition'));
+
+    const stateRow = h('div', {style: 'margin-bottom:10px;'});
+    stateRow.appendChild(document.createTextNode('Current state: '));
+    stateRow.appendChild(h('span', {'class': 'pill state-' + a.state}, a.state));
+    card.appendChild(stateRow);
+
+    const btnRow = h('div', {class: 'btn-row'});
+    for (const nextState of transitions) {
+      const btn = h('button', {'data-testid': 'state-transition-btn-' + nextState}, '\u2192 ' + nextState);
+      btn.onclick = () => this.transitionState(nextState);
+      btnRow.appendChild(btn);
+    }
+    card.appendChild(btnRow);
+
+    if (a.log_tail && a.log_tail.length) {
+      const details = h('details', {class: 'disclosure'});
+      details.appendChild(h('summary', {}, 'Recent log'));
+      const tail = a.log_tail.slice(-20).join('\n');
+      details.appendChild(h('div', {class: 'log-tail'}, tail));
+      card.appendChild(details);
+    }
+
+    return card;
+  },
+
+  renderPermissionsCard(a) {
+    if (!a.permissions) return null;
+
     const p = a.permissions;
-    box.appendChild(h('div', {style: 'margin-bottom:12px;'}, [
-      h('strong', {}, 'Status: '),
-      h('span', {class: 'badge status-' + p.status}, p.status),
-      p.approved ? h('span', {style: 'margin-left:12px;color:var(--muted);'}, 'approved: ' + p.approved) : '',
-    ]));
+    const card = h('div', {'class': 'card', 'data-testid': 'decisions-permissions-card'});
+    card.appendChild(h('h3', {class: 'card-title'}, 'Permissions'));
+
     if (p.status !== 'approved') {
-      const btn = h('button', {}, 'Approve Permissions');
-      btn.onclick = async () => {
+      // Placeholder while loading
+      const summaryEl = h('div', {'data-testid': 'permissions-summary', class: 'adv-meta'}, 'Loading counts\u2026');
+      card.appendChild(summaryEl);
+
+      const details = h('details', {class: 'disclosure'});
+      details.appendChild(h('summary', {}, 'Show full request \u25b8'));
+      const bodyEl = h('div');
+      bodyEl.innerHTML = '<div class="empty">Loading\u2026</div>';
+      details.appendChild(bodyEl);
+      card.appendChild(details);
+
+      const approveBtn = h('button', {'data-testid': 'permissions-approve-btn', style: 'margin-top:10px;'}, 'Approve Permissions');
+      approveBtn.onclick = async () => {
         if (!confirm('Approve permissions for ' + a.id + '?')) return;
         try {
           await API.approvePerm(a.id);
@@ -600,136 +1733,372 @@ const App = {
           this.reopen();
         } catch (e) { toast('Error: ' + e, 'error'); }
       };
-      box.appendChild(btn);
+      card.appendChild(approveBtn);
+
+      // Async: fetch markdown, update summary + body
+      API.file(p.file).then(txt => {
+        const counts = parsePermissionCounts(txt);
+        const parts = [];
+        if (counts.shell) parts.push(counts.shell + ' shell');
+        if (counts.file)  parts.push(counts.file  + ' file');
+        if (counts.mcp)   parts.push(counts.mcp   + ' MCP');
+        summaryEl.textContent = parts.length ? parts.join(' \u00b7 ') + ' requests' : 'No typed requests found.';
+        bodyEl.innerHTML = marked.parse(txt);
+      }).catch(e => {
+        summaryEl.textContent = 'Failed to load: ' + e;
+      });
+    } else {
+      // Already approved
+      const line = h('div', {style: 'color:var(--muted);'}, 'Permissions approved on ' + (p.approved || '\u2014'));
+      card.appendChild(line);
+
+      const details = h('details', {class: 'disclosure', style: 'margin-top:10px;'});
+      details.appendChild(h('summary', {}, 'Show full request \u25b8'));
+      const bodyEl = h('div');
+      bodyEl.innerHTML = '<div class="empty">Loading\u2026</div>';
+      details.appendChild(bodyEl);
+      card.appendChild(details);
+
+      API.file(p.file).then(txt => {
+        bodyEl.innerHTML = marked.parse(txt);
+      }).catch(e => {
+        bodyEl.innerHTML = '<div class="empty" style="color:var(--err);">' + esc(e) + '</div>';
+      });
     }
-    const view = h('div', {class: 'file-view', style: 'margin-top:14px;'});
-    view.innerHTML = '<div class="empty">Loading…</div>';
-    box.appendChild(view);
-    API.file(p.file).then(txt => view.innerHTML = marked.parse(txt))
-                    .catch(e => view.innerHTML = '<div class="empty" style="color:var(--err);">' + esc(e) + '</div>');
-    return box;
+
+    return card;
   },
 
-  // ----- Reviews --------------------------------------------------------
-  renderReviews(a) {
-    const box = h('div');
-    const split = h('div', {class: 'split'});
-    const list  = h('div', {class: 'file-list'});
-    const view  = h('div', {class: 'file-view'}, h('div', {class: 'empty'}, 'Select a review.'));
+  renderKnowledgeCard(a) {
+    if (!a.adventure_report) return null;
 
-    if (a.adventure_report) {
-      const row = h('div', {class: 'file-entry', style: 'font-weight:600;color:var(--accent);'}, '★ adventure-report.md');
-      row.onclick = async () => {
-        document.querySelectorAll('.file-entry').forEach(el => el.classList.remove('active'));
-        row.classList.add('active');
-        view.innerHTML = '<div class="empty">Loading…</div>';
-        try {
-          const txt = await API.file(a.adventure_report.file);
-          view.innerHTML = marked.parse(txt);
-        } catch (e) {
-          view.innerHTML = '<div class="empty" style="color:var(--err);">' + esc(e) + '</div>';
-        }
-      };
-      list.appendChild(row);
-    }
+    const card = h('div', {'class': 'card', 'data-testid': 'decisions-knowledge-card'});
+    card.appendChild(h('h3', {class: 'card-title'}, 'Knowledge Suggestions'));
 
-    if (!a.reviews.length && !a.adventure_report) {
-      box.appendChild(h('div', {class: 'empty'}, 'No reviews yet. Run `/adventure-review ' + a.id + '`.'));
-      return box;
-    }
+    const loadingEl = h('div', {class: 'empty'}, 'Loading suggestions\u2026');
+    card.appendChild(loadingEl);
 
-    for (const r of a.reviews) {
-      if (r.file === 'adventure-report.md') continue;
-      const row = h('div', {class: 'file-entry'}, [
-        h('span', {}, r.task_id),
-        h('span', {class: 'badge status-' + r.status}, r.status || '?'),
-      ]);
-      row.onclick = async () => {
-        document.querySelectorAll('.file-entry').forEach(el => el.classList.remove('active'));
-        row.classList.add('active');
-        view.innerHTML = '<div class="empty">Loading…</div>';
-        try {
-          const txt = await API.file(`.agent/adventures/${a.id}/reviews/${r.file}`);
-          view.innerHTML = marked.parse(txt);
-        } catch (e) {
-          view.innerHTML = '<div class="empty" style="color:var(--err);">' + esc(e) + '</div>';
-        }
-      };
-      list.appendChild(row);
-    }
-
-    split.appendChild(list);
-    split.appendChild(view);
-    box.appendChild(split);
-    list.firstChild?.click();
-    return box;
-  },
-
-  // ----- Knowledge ------------------------------------------------------
-  async renderKnowledge(pane, a) {
-    if (!a.adventure_report) {
-      pane.appendChild(h('div', {class: 'empty'}, 'No adventure-report.md — run /adventure-review first.'));
-      return;
-    }
-    pane.innerHTML = '<div class="empty">Loading suggestions…</div>';
-    try {
-      const txt = await API.file(a.adventure_report.file);
+    // Async: fetch, parse, render
+    API.file(a.adventure_report.file).then(txt => {
       const suggestions = parseKnowledgeSuggestions(txt);
-      pane.innerHTML = '';
+      card.removeChild(loadingEl);
+
       if (!suggestions.length) {
-        pane.appendChild(h('div', {class: 'empty'}, 'No "### Suggestion" blocks in Section 6.'));
+        // Hide the card from its parent when no actionable content found
+        if (card.parentNode) card.parentNode.removeChild(card);
         return;
       }
-      pane.appendChild(h('h3', {}, `Knowledge Extraction — ${suggestions.length} suggestion(s)`));
-      pane.appendChild(h('div', {class: 'adv-meta'}, 'Check items to record a selection; use the button below to export. ' +
-        'Claude applies via /adventure-review → knowledge-extractor.'));
+
+      card.appendChild(h('div', {class: 'adv-meta', style: 'margin-bottom:10px;'},
+        suggestions.length + ' suggestion(s) — check items to record.'));
 
       const form = h('div');
       const checkboxes = [];
       for (const s of suggestions) {
         const cb = h('input', {type: 'checkbox'});
         cb.checked = true;
-        checkboxes.push({cb, index: s.index, type: s.type});
-        form.appendChild(h('div', {class: 'kb-item'}, [
-          cb,
-          h('div', {class: 'kb-body'}, [
-            h('div', {class: 'kb-title'}, `[${s.index}] ${s.title}`),
-            h('div', {class: 'kb-meta'}, `${s.type} → ${s.target || '(no target file)'}`),
-            h('div', {class: 'kb-content'}, s.body),
-          ]),
+        checkboxes.push({cb, index: s.index});
+        const row = h('div', {'class': 'kb-item', 'data-testid': 'knowledge-suggestion-' + s.index});
+        row.appendChild(cb);
+        row.appendChild(h('div', {class: 'kb-body'}, [
+          h('div', {class: 'kb-title'}, '[' + s.index + '] ' + s.title),
+          h('div', {class: 'kb-meta'}, s.type + ' \u2192 ' + (s.target || '(no target file)')),
+          h('div', {class: 'kb-content'}, s.body.trim()),
         ]));
+        form.appendChild(row);
       }
-      pane.appendChild(form);
+      card.appendChild(form);
 
-      const btnRow = h('div', {class: 'btn-row'});
-      const applyBtn = h('button', {}, '✓ Record Selection');
-      applyBtn.onclick = async () => {
+      const btnRow = h('div', {class: 'btn-row', style: 'margin-top:10px;'});
+
+      const recordBtn = h('button', {'data-testid': 'knowledge-record-btn'}, '\u2713 Record Selection');
+      recordBtn.onclick = async () => {
         const picked = checkboxes.filter(c => c.cb.checked).map(c => c.index);
-        if (!picked.length) { toast('Select at least one'); return; }
+        if (!picked.length) { toast('Select at least one suggestion'); return; }
         try {
           const r = await API.applyKB(a.id, picked);
-          toast('Recorded selection: ' + picked.join(', ') + ' → ' + (r.file || 'knowledge-selection.json'), 'ok');
+          toast('Recorded: ' + picked.join(', ') + ' \u2192 ' + (r.file || 'knowledge-selection.json'), 'ok');
         } catch (e) { toast('Error: ' + e, 'error'); }
       };
-      btnRow.appendChild(applyBtn);
+      btnRow.appendChild(recordBtn);
+
       const allBtn = h('button', {class: 'secondary'}, 'Select All');
       allBtn.onclick = () => checkboxes.forEach(c => c.cb.checked = true);
       btnRow.appendChild(allBtn);
+
       const noneBtn = h('button', {class: 'secondary'}, 'None');
       noneBtn.onclick = () => checkboxes.forEach(c => c.cb.checked = false);
       btnRow.appendChild(noneBtn);
-      pane.appendChild(btnRow);
-    } catch (e) {
-      pane.innerHTML = '<div class="empty" style="color:var(--err);">' + esc(e) + '</div>';
+
+      card.appendChild(btnRow);
+    }).catch(e => {
+      card.removeChild(loadingEl);
+      card.appendChild(h('div', {class: 'empty', style: 'color:var(--err);'}, 'Error: ' + esc(String(e))));
+    });
+
+    return card;
+  },
+
+  // ----- Pipeline (ADV009-T019) ----------------------------------------
+
+  pipelinePollMs() {
+    const v = new URLSearchParams(location.search).get('poll');
+    const n = parseInt(v, 10);
+    return n > 0 ? n : 5000;
+  },
+
+  stopPolling() {
+    if (this.pipelineTimer !== null) {
+      clearTimeout(this.pipelineTimer);
+      this.pipelineTimer = null;
     }
   },
 
-  // ----- Log tail -------------------------------------------------------
-  renderLog(a) {
-    const box = h('div');
-    box.appendChild(h('h3', {}, 'Adventure Log (tail)'));
-    box.appendChild(h('div', {class: 'log-tail'}, (a.log_tail || []).join('\n') || '(empty)'));
-    return box;
+  renderPipeline(a) {
+    const wrap   = h('div', {class: 'pipeline-wrap'});
+    const canvas = h('div', {id: 'pipeline-canvas', 'data-testid': 'pipeline-canvas'});
+    const legend = this.renderPipelineLegend();
+    const tip    = h('div', {class: 'pipeline-tooltip', id: 'pipeline-tip'});
+    wrap.appendChild(canvas);
+    wrap.appendChild(legend);
+    wrap.appendChild(tip);
+    // Defer cy init until the element is in the DOM
+    queueMicrotask(() => this.mountCytoscape(canvas, a));
+    return wrap;
+  },
+
+  renderPipelineLegend() {
+    const legend = h('div', {class: 'pipeline-legend'});
+    const SWATCHES = [
+      ['Task',      'var(--accent)'],
+      ['TC',        'var(--ok)'],
+      ['Decision',  'var(--warn)'],
+      ['Document',  'var(--text)'],
+      ['Adventure', 'var(--accent-dim)'],
+      ['Phase',     'var(--muted)'],
+    ];
+    for (const [label, color] of SWATCHES) {
+      const row = h('div', {style: 'display:flex;align-items:center;margin-bottom:4px;'});
+      const sw = h('span', {class: 'sw', style: 'background:' + color + ';'});
+      row.appendChild(sw);
+      row.appendChild(document.createTextNode(label));
+      legend.appendChild(row);
+    }
+    return legend;
+  },
+
+  mountCytoscape(el, a) {
+    // Tear down any previous instance
+    this.stopPolling();
+    if (this.cy) { this.cy.destroy(); this.cy = null; }
+
+    if (!window.cytoscape) {
+      el.innerHTML = '<div class="empty" style="padding:20px;">cytoscape.js failed to load from CDN.</div>';
+      return;
+    }
+
+    // Read CSS custom property colours once at mount
+    const cs = getComputedStyle(document.documentElement);
+    const cv = prop => cs.getPropertyValue(prop).trim();
+    const colours = {
+      ok:      cv('--ok')      || '#5fd38a',
+      warn:    cv('--warn')    || '#f0b04a',
+      err:     cv('--err')     || '#e66a6a',
+      accent:  cv('--accent')  || '#5ab0ff',
+      dim:     cv('--accent-dim') || '#2d6ca8',
+      muted:   cv('--muted')   || '#8a96a4',
+      text:    cv('--text')    || '#dbe1e8',
+      bg:      cv('--bg-alt')  || '#161d25',
+      border:  cv('--border')  || '#2a343f',
+    };
+
+    // Build cytoscape style array
+    const cyStyle = this.buildCyStyle(colours);
+
+    // Determine layout
+    const layoutName = (window.cytoscapeDagre) ? 'dagre' : 'breadthfirst';
+    const layoutOpts = layoutName === 'dagre'
+      ? { name: 'dagre', rankDir: 'LR', nodeSep: 40, rankSep: 80 }
+      : { name: 'breadthfirst', directed: true, padding: 20 };
+
+    this.cy = cytoscape({
+      container: el,
+      elements: [],
+      style: cyStyle,
+      layout: layoutOpts,
+    });
+
+    // Tooltip handlers
+    this.cy.on('mouseover', 'node', e => this.showTooltip(e.target));
+    this.cy.on('mouseout',  'node', () => this.hideTooltip());
+    this.cy.on('tap',       'node', e => this.showTooltip(e.target));
+
+    // Attach graph-edit affordances (drag, click, right-click)
+    PipelineEdit.attach(this.cy, a);
+
+    // Begin polling
+    this.pollGraph(a.id);
+  },
+
+  buildCyStyle(c) {
+    return [
+      // Base node style
+      {
+        selector: 'node',
+        style: {
+          'label': 'data(label)',
+          'font-size': '10px',
+          'color': c.text,
+          'text-valign': 'bottom',
+          'text-halign': 'center',
+          'text-margin-y': '4px',
+          'background-color': c.muted,
+          'border-width': 1,
+          'border-color': c.border,
+          'width': 30,
+          'height': 30,
+        },
+      },
+      // Base edge style
+      {
+        selector: 'edge',
+        style: {
+          'width': 1.5,
+          'line-color': c.border,
+          'target-arrow-color': c.border,
+          'target-arrow-shape': 'triangle',
+          'curve-style': 'bezier',
+          'font-size': '9px',
+          'color': c.muted,
+        },
+      },
+      // Task status
+      { selector: 'node[kind="task"][status="done"]',        style: {'background-color': c.ok} },
+      { selector: 'node[kind="task"][status="passed"]',      style: {'background-color': c.ok} },
+      { selector: 'node[kind="task"][status="in_progress"]', style: {'background-color': c.accent} },
+      { selector: 'node[kind="task"][status="failed"]',      style: {'background-color': c.err} },
+      { selector: 'node[kind="task"][status="blocked"]',     style: {'background-color': c.err} },
+      // TC status
+      { selector: 'node[kind="tc"][status="passed"]',        style: {'background-color': c.ok} },
+      { selector: 'node[kind="tc"][status="PASSED"]',        style: {'background-color': c.ok} },
+      { selector: 'node[kind="tc"][status="failed"]',        style: {'background-color': c.err} },
+      { selector: 'node[kind="tc"][status="FAILED"]',        style: {'background-color': c.err} },
+      // Decision status
+      { selector: 'node[kind="decision"][status="pending"]', style: {'background-color': c.warn} },
+      { selector: 'node[kind="decision"][status="done"]',    style: {'background-color': c.ok} },
+      { selector: 'node[kind="decision"][status="passed"]',  style: {'background-color': c.ok} },
+      // Document
+      { selector: 'node[kind="document"]',                   style: {'background-color': c.muted} },
+      { selector: 'node[kind="document"][status="done"]',    style: {'background-color': c.text} },
+      { selector: 'node[kind="document"][status="passed"]',  style: {'background-color': c.text} },
+      // Adventure
+      { selector: 'node[kind="adventure"]',                  style: {'background-color': c.accent, 'width': 40, 'height': 40} },
+      { selector: 'node[kind="adventure"][status="done"]',   style: {'background-color': c.ok} },
+      { selector: 'node[kind="adventure"][status="completed"]', style: {'background-color': c.ok} },
+      { selector: 'node[kind="adventure"][status="failed"]', style: {'background-color': c.err} },
+      // Phase (compound parent — semi-transparent)
+      { selector: 'node[kind="phase"]',                      style: {'background-color': c.muted, 'background-opacity': 0.2, 'border-width': 2} },
+      { selector: 'node[kind="phase"][status="done"]',       style: {'background-color': c.ok, 'background-opacity': 0.2} },
+      { selector: 'node[kind="phase"][status="passed"]',     style: {'background-color': c.ok, 'background-opacity': 0.2} },
+    ];
+  },
+
+  async pollGraph(advId) {
+    // Guard: stop if switched away
+    if (this.currentId !== advId || this.currentTab !== 'pipeline') return;
+    try {
+      const g = await fetch('/api/adventures/' + advId + '/graph').then(j);
+      this.lastGraphExplanations = g.explanations || {};
+      if (this.cy) this.applyGraphDiff(this.cy, g);
+    } catch (e) {
+      // Surface via toast but keep polling; if backend absent, show empty-state once
+      const canvas = document.getElementById('pipeline-canvas');
+      if (canvas && this.cy && this.cy.nodes().length === 0) {
+        const msg = document.createElement('div');
+        msg.className = 'empty';
+        msg.style.cssText = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);';
+        msg.textContent = 'Pipeline graph unavailable — backend missing or error: ' + (e.message || e);
+        canvas.appendChild(msg);
+      }
+    }
+    // Schedule next poll only if still on this adventure + tab
+    if (this.currentId === advId && this.currentTab === 'pipeline') {
+      this.pipelineTimer = setTimeout(() => this.pollGraph(advId), this.pipelinePollMs());
+    }
+  },
+
+  applyGraphDiff(cy, payload) {
+    const newNodes = (payload.nodes || []);
+    const newEdges = (payload.edges || []);
+
+    const existingNodeIds = new Set(cy.nodes().map(n => n.id()));
+    const existingEdgeIds = new Set(cy.edges().map(e => e.id()));
+
+    const newNodeIds = new Set(newNodes.map(n => n.data.id));
+    const newEdgeIds = new Set(newEdges.map(e => e.data.id));
+
+    // Determine what to add / remove
+    // Skip optimistic edges when reconciling — they are owned by PipelineEdit
+    const nodesToAdd    = newNodes.filter(n => !existingNodeIds.has(n.data.id));
+    const nodesToRemove = [...existingNodeIds].filter(id => !newNodeIds.has(id));
+    const edgesToAdd    = newEdges.filter(e => !existingEdgeIds.has(e.data.id));
+    const edgesToRemove = [...existingEdgeIds].filter(id => {
+      if (newEdgeIds.has(id)) return false;
+      const el = cy.$('#' + CSS.escape(id));
+      return !el.data('optimistic'); // preserve optimistic edges
+    });
+
+    // Update survivors (status / label only — preserves layout)
+    for (const n of newNodes) {
+      if (existingNodeIds.has(n.data.id)) {
+        const el = cy.$('#' + CSS.escape(n.data.id));
+        if (n.data.status !== undefined) el.data('status', n.data.status);
+        if (n.data.label  !== undefined) el.data('label',  n.data.label);
+      }
+    }
+
+    // Remove gone elements
+    for (const id of nodesToRemove) cy.$('#' + CSS.escape(id)).remove();
+    for (const id of edgesToRemove) cy.$('#' + CSS.escape(id)).remove();
+
+    // Add new elements
+    if (nodesToAdd.length || edgesToAdd.length) {
+      cy.add([...nodesToAdd, ...edgesToAdd]);
+    }
+
+    // Re-run layout only when the node set changed
+    const nodeSetChanged = nodesToAdd.length > 0 || nodesToRemove.length > 0;
+    if (nodeSetChanged) {
+      const layoutName = window.cytoscapeDagre ? 'dagre' : 'breadthfirst';
+      const opts = layoutName === 'dagre'
+        ? { name: 'dagre', rankDir: 'LR', nodeSep: 40, rankSep: 80 }
+        : { name: 'breadthfirst', directed: true, padding: 20 };
+      cy.layout(opts).run();
+    }
+  },
+
+  showTooltip(node) {
+    const tip = document.getElementById('pipeline-tip');
+    if (!tip) return;
+    const text = this.lastGraphExplanations[node.id()] || '';
+    tip.textContent = text;
+    tip.style.display = text ? 'block' : 'none';
+    if (!text) return;
+    const pos = node.renderedPosition();
+    const canvas = document.getElementById('pipeline-canvas');
+    const rect = canvas ? canvas.getBoundingClientRect() : {width: 800, height: 500};
+    const tipW = 320, tipH = 60;
+    let x = pos.x + 12;
+    let y = pos.y + 12;
+    if (x + tipW > rect.width)  x = pos.x - tipW - 4;
+    if (y + tipH > rect.height) y = pos.y - tipH - 4;
+    tip.style.left = Math.max(0, x) + 'px';
+    tip.style.top  = Math.max(0, y) + 'px';
+  },
+
+  hideTooltip() {
+    const tip = document.getElementById('pipeline-tip');
+    if (tip) tip.style.display = 'none';
   },
 
   // ----- State transition ----------------------------------------------
@@ -745,8 +2114,87 @@ const App = {
   },
 };
 
+// Document type labels (used in renderDocuments chip bar and row pills)
+const LABELS_DOC = { design: 'Design', plan: 'Plan', research: 'Research', review: 'Review' };
+
 function count(arr) {
   return arr && arr.length ? ` (${arr.length})` : '';
+}
+
+// ----------------------------------------------------------------------------
+//  Document markdown helpers (ADV009-T009)
+// ----------------------------------------------------------------------------
+
+// splitSections(md) → { heading: body } keyed by ## headings.
+// Handles YAML frontmatter (strips it before parsing).
+function splitSections(md) {
+  const text = md.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '');
+  const lines = text.split('\n');
+  const result = {};
+  let current = null;
+  let buf = [];
+  for (const line of lines) {
+    const m = line.match(/^## (.+)$/);
+    if (m) {
+      if (current !== null) result[current] = buf.join('\n').trim();
+      current = m[1].trim();
+      buf = [];
+    } else {
+      buf.push(line);
+    }
+  }
+  if (current !== null) result[current] = buf.join('\n').trim();
+  return result;
+}
+
+// parseSummaryTable(md) → key/value object from first pipe-table.
+function parseSummaryTable(md) {
+  const rows = {};
+  const lines = md.split('\n');
+  let foundTable = false;
+  for (const line of lines) {
+    if (!line.trim().startsWith('|')) { if (foundTable) break; continue; }
+    foundTable = true;
+    // Skip separator rows (|---|---|)
+    if (/^\|[-\s|:]+\|/.test(line)) continue;
+    const cells = line.split('|').map(s => s.trim()).filter((_, i, arr) => i > 0 && i < arr.length - 1);
+    if (cells.length >= 2) rows[cells[0]] = cells[1];
+  }
+  return rows;
+}
+
+// parseIssuesList(md) → [{severity, text}] from "- [sev] text" bullets.
+function parseIssuesList(md) {
+  const SEVERITIES = ['blocker', 'major', 'minor', 'note'];
+  const out = [];
+  for (const line of md.split('\n')) {
+    const m = line.match(/^[-*]\s+(?:\[([^\]]+)\]\s*)?(.+)$/);
+    if (!m) continue;
+    const raw = (m[1] || 'note').toLowerCase().trim();
+    const severity = SEVERITIES.includes(raw) ? raw : 'note';
+    out.push({ severity, text: m[2].trim() });
+  }
+  return out;
+}
+
+// parsePlanTaskCards(md) → [{title, summary}] from ### headings.
+function parsePlanTaskCards(md) {
+  if (!md) return [];
+  const lines = md.split('\n');
+  const cards = [];
+  let cur = null;
+  for (const line of lines) {
+    const m = line.match(/^### (.+)$/);
+    if (m) {
+      if (cur) cards.push(cur);
+      cur = { title: m[1].trim(), summary: '' };
+    } else if (cur && !cur.summary) {
+      const txt = line.trim();
+      if (txt) cur.summary = txt;
+    }
+  }
+  if (cur) cards.push(cur);
+  return cards;
 }
 
 // ----------------------------------------------------------------------------
@@ -792,6 +2240,319 @@ function parseKnowledgeSuggestions(md) {
   if (cur) out.push(cur);
   return out;
 }
+
+// ----------------------------------------------------------------------------
+//  Permission-count parser (ADV009-T010)
+//    Scans permissions.md for pipe-delimited table rows under ## Requests.
+//    Column 3 (0-indexed col 2) is the type field: shell, file-read, file-write, mcp, etc.
+//    Collapses file-read / file-write into a single "file" bucket.
+//    Returns { shell: N, file: N, mcp: N }.
+// ----------------------------------------------------------------------------
+function parsePermissionCounts(md) {
+  const counts = { shell: 0, file: 0, mcp: 0 };
+  const lines = md.split('\n');
+  let inRequests = false;
+
+  for (const line of lines) {
+    // Detect ## Requests section
+    if (/^##\s+Requests\b/i.test(line)) { inRequests = true; continue; }
+    // Stop at next ## heading
+    if (inRequests && /^##\s/.test(line)) { break; }
+    if (!inRequests) continue;
+
+    // Skip non-table lines and separator rows
+    if (!line.trim().startsWith('|')) continue;
+    if (/^\|[-\s|:]+\|/.test(line)) continue;
+
+    const cells = line.split('|').map(s => s.trim()).filter((_, i, arr) => i > 0 && i < arr.length - 1);
+    // Column index 2 (0-based) is the type field: | # | name | type | ... |
+    if (cells.length < 3) continue;
+    const raw = cells[2].toLowerCase();
+
+    if (raw === 'shell' || raw === 'bash' || raw === 'exec') {
+      counts.shell++;
+    } else if (raw.startsWith('file')) {
+      counts.file++;
+    } else if (raw === 'mcp' || raw.startsWith('mcp-')) {
+      counts.mcp++;
+    }
+  }
+
+  return counts;
+}
+
+// ----------------------------------------------------------------------------
+//  PipelineEdit — graph edit affordances (ADV009-T020)
+//  Provides: drag-to-depends, state-edge click, right-click context menu.
+//  All mutations route through API.* helpers; no raw fetch/post here.
+// ----------------------------------------------------------------------------
+const EDIT_GUARD_MS = 500;
+
+const PipelineEdit = {
+  _busy: false,
+
+  // Entry point called from mountCytoscape after cy is created
+  attach(cy, adv) {
+    this._cy  = cy;
+    this._adv = adv;
+    this._wireStateEdgeClick(cy, adv);
+    this._wireDragToDepend(cy, adv);
+    this._wireContextMenu(cy, adv);
+  },
+
+  // ---- Double-submit guard -----------------------------------------------
+  guardOnce(fn) {
+    if (PipelineEdit._busy) return;
+    PipelineEdit._busy = true;
+    try { return fn(); }
+    finally { setTimeout(() => { PipelineEdit._busy = false; }, EDIT_GUARD_MS); }
+  },
+
+  // ---- State-transition edge click ---------------------------------------
+  _wireStateEdgeClick(cy, adv) {
+    cy.on('tap', 'edge[kind = "state_transition"]', evt => {
+      const edge   = evt.target;
+      const tgtId  = edge.data('target');
+      // target node id format: "state:<name>"
+      const match  = (tgtId || '').match(/^state:(.+)$/);
+      const name   = match ? match[1] : tgtId;
+      if (!name) return;
+
+      PipelineEdit.guardOnce(async () => {
+        try {
+          await API.setState(adv.id, name);
+          toast('State \u2192 ' + name, 'ok');
+        } catch (e) {
+          toast('Error: ' + (e && e.error ? e.error : e), 'error');
+        }
+      });
+    });
+  },
+
+  // ---- Drag task A → task B to add depends_on ----------------------------
+  _wireDragToDepend(cy, adv) {
+    let dragSrcId    = null;
+    let hoveredTgtId = null;
+    let tentativeEl  = null;
+    let mmHandler    = null;
+    let muHandler    = null;
+
+    const cancelDrag = () => {
+      if (tentativeEl) { cy.remove(tentativeEl); tentativeEl = null; }
+      const container = cy.container();
+      if (mmHandler) { container.removeEventListener('mousemove', mmHandler); mmHandler = null; }
+      if (muHandler) { container.removeEventListener('mouseup',   muHandler); muHandler = null; }
+      dragSrcId    = null;
+      hoveredTgtId = null;
+    };
+
+    cy.on('taphold', 'node[kind = "task"]', evt => {
+      // Cancel any prior drag
+      cancelDrag();
+
+      dragSrcId = evt.target.id();
+      // Add a tentative ghost edge (source → source while dragging)
+      tentativeEl = cy.add({
+        group: 'edges',
+        data: { id: '_tentative', source: dragSrcId, target: dragSrcId,
+                kind: 'depends_on', optimistic: true },
+      });
+
+      const container = cy.container();
+
+      mmHandler = mmEvt => {
+        // Find which task node the mouse is currently over
+        const hit = cy.nodes('[kind = "task"]').filter(n => {
+          const rp = n.renderedPosition();
+          const r  = n.renderedOuterWidth() / 2;
+          const cr = container.getBoundingClientRect();
+          const mx = mmEvt.clientX - cr.left;
+          const my = mmEvt.clientY - cr.top;
+          return Math.hypot(rp.x - mx, rp.y - my) <= r;
+        }).first();
+
+        const newTgt = hit.length ? hit.id() : dragSrcId;
+        if (newTgt !== hoveredTgtId) {
+          hoveredTgtId = newTgt;
+          if (tentativeEl) tentativeEl.move({ source: dragSrcId, target: hoveredTgtId });
+        }
+      };
+
+      muHandler = () => {
+        // Self-remove handler first (single-fire guarantee)
+        container.removeEventListener('mousemove', mmHandler); mmHandler = null;
+        container.removeEventListener('mouseup',   muHandler); muHandler = null;
+
+        const srcId = dragSrcId;
+        const tgtId = hoveredTgtId && hoveredTgtId !== srcId ? hoveredTgtId : null;
+
+        // Remove tentative ghost
+        if (tentativeEl) { cy.remove(tentativeEl); tentativeEl = null; }
+        dragSrcId    = null;
+        hoveredTgtId = null;
+
+        if (!tgtId) return; // dropped on canvas or self — no POST
+
+        // Add optimistic edge immediately
+        const optId = '_opt-' + srcId + '-' + tgtId;
+        // Remove if already exists (idempotent)
+        cy.$('#' + optId).remove();
+        cy.add({
+          group: 'edges',
+          data: { id: optId, source: srcId, target: tgtId,
+                  kind: 'depends_on', optimistic: true },
+        });
+
+        PipelineEdit.guardOnce(async () => {
+          try {
+            await API.addDepends(adv.id, srcId, tgtId);
+            toast('depends_on added: ' + srcId + ' \u2192 ' + tgtId, 'ok');
+            // Leave the optimistic edge; next poll tick replaces it
+          } catch (e) {
+            // Rollback the optimistic edge
+            cy.remove('#' + optId);
+            const msg = (e && e.error) ? e.error : (String(e) || 'Server unreachable \u2014 retry?');
+            toast(msg, 'error');
+          }
+        });
+      };
+
+      container.addEventListener('mousemove', mmHandler);
+      container.addEventListener('mouseup',   muHandler, { once: false });
+    });
+
+    // Cancel drag if user taps canvas (left-click) without dragging
+    cy.on('tap', evt => {
+      if (evt.target === cy) cancelDrag();
+    });
+  },
+
+  // ---- Right-click DOM context menu --------------------------------------
+  _wireContextMenu(cy, adv) {
+    const menu = document.getElementById('pipeline-ctx');
+    if (!menu) return;
+
+    const hideMenu = () => { menu.style.display = 'none'; };
+
+    // Build a menu item element
+    const menuItem = (label, fn) => {
+      const el = document.createElement('div');
+      el.className = 'context-menu-item';
+      el.textContent = label;
+      el.onclick = e => {
+        e.stopPropagation();
+        hideMenu();
+        fn();
+      };
+      return el;
+    };
+
+    const showMenu = (node, clientX, clientY) => {
+      menu.innerHTML = '';
+      const kind    = node.data('kind');
+      const docKind = node.data('docKind');
+      const items   = [];
+
+      if (kind === 'document') {
+        // Open document link
+        const path = node.data('path') || '';
+        if (path) {
+          items.push(menuItem('Open document', () => {
+            window.open('/api/file?path=' + encodeURIComponent(path), '_blank');
+          }));
+        }
+        // Approve design
+        if (docKind === 'design') {
+          const name = node.data('name') || node.id();
+          items.push(menuItem('Approve design', () => {
+            PipelineEdit.guardOnce(async () => {
+              try {
+                await API.approveDes(adv.id, name);
+                toast('Design approved: ' + name, 'ok');
+              } catch (e) {
+                toast((e && e.error) ? e.error : String(e), 'error');
+              }
+            });
+          }));
+        }
+      }
+
+      if (kind === 'decision') {
+        const label = (node.data('label') || '').toLowerCase();
+        // Approve permissions
+        if (label.includes('permission')) {
+          items.push(menuItem('Approve permissions', () => {
+            PipelineEdit.guardOnce(async () => {
+              try {
+                await API.approvePerm(adv.id);
+                toast('Permissions approved', 'ok');
+              } catch (e) {
+                toast((e && e.error) ? e.error : String(e), 'error');
+              }
+            });
+          }));
+        }
+        // Apply knowledge suggestion
+        if (label.includes('knowledge')) {
+          const indices = node.data('indices') || [];
+          items.push(menuItem('Apply knowledge suggestion', () => {
+            PipelineEdit.guardOnce(async () => {
+              try {
+                await API.applyKB(adv.id, [...indices]);
+                toast('Knowledge suggestion applied', 'ok');
+              } catch (e) {
+                toast((e && e.error) ? e.error : String(e), 'error');
+              }
+            });
+          }));
+        }
+      }
+
+      if (kind === 'task') {
+        const taskId = node.data('taskId') || node.id();
+        items.push(menuItem('Open task detail', () => {
+          App.switchTab('tasks');
+          const task = (App.currentAdv && App.currentAdv.tasks || []).find(t => t.id === taskId);
+          if (task) App.openTaskDetail(task, App.currentAdv);
+        }));
+      }
+
+      if (!items.length) return; // no items → don't show empty menu
+
+      for (const item of items) menu.appendChild(item);
+
+      // Position the menu
+      menu.style.display = 'block';
+      menu.style.left = clientX + 'px';
+      menu.style.top  = clientY + 'px';
+
+      // Clamp to viewport
+      const mr = menu.getBoundingClientRect();
+      if (mr.right > window.innerWidth)  menu.style.left = (clientX - mr.width)  + 'px';
+      if (mr.bottom > window.innerHeight) menu.style.top = (clientY - mr.height) + 'px';
+    };
+
+    // Right-click on any node
+    cy.on('cxttap', 'node', evt => {
+      const oe = evt.originalEvent;
+      if (!oe) return;
+      showMenu(evt.target, oe.clientX, oe.clientY);
+    });
+
+    // Hide on left-click anywhere on the canvas
+    cy.on('tap', () => hideMenu());
+
+    // Hide on outside DOM click
+    document.addEventListener('click', e => {
+      if (!menu.contains(e.target)) hideMenu();
+    });
+
+    // Hide on Escape
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') hideMenu();
+    });
+  },
+};
 
 // Kick off
 App.refreshList();

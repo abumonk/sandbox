@@ -1,0 +1,12 @@
+{
+  "event_type": "SubagentStop",
+  "timestamp": "2026-04-15T12:00:00Z",
+  "adventure_id": "ADV-010",
+  "agent": "coder",
+  "task": "ADV010-T006",
+  "model": "claude-opus-4-6",
+  "tokens_out": 5000,
+  "duration_ms": 60000,
+  "turns": 4,
+  "result": "done"
+}

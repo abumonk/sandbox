@@ -4,7 +4,7 @@ title: Claude-Code-Game-Studios-style Studio Hierarchy in Ark DSL
 state: completed
 created: 2026-04-11T00:00:00Z
 updated: 2026-04-11T00:00:00Z
-tasks: []
+tasks: [ADV003-T001, ADV003-T002, ADV003-T003, ADV003-T004, ADV003-T005, ADV003-T006, ADV003-T007, ADV003-T008, ADV003-T009, ADV003-T010, ADV003-T011, ADV003-T012, ADV003-T013, ADV003-T014]
 depends_on: [ADV-002]
 ---
 

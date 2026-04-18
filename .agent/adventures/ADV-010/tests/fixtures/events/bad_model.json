@@ -1,0 +1,13 @@
+{
+  "event_type": "SubagentStop",
+  "timestamp": "2026-04-15T13:00:00Z",
+  "adventure_id": "ADV-010",
+  "agent": "coder",
+  "task": "ADV010-T007",
+  "model": "unknown-model-xyz",
+  "tokens_in": 1000,
+  "tokens_out": 500,
+  "duration_ms": 30000,
+  "turns": 2,
+  "result": "done"
+}

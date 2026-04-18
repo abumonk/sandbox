@@ -62,7 +62,22 @@ Decisions made during task implementation.
 - **Decision**: Ship via milestones M0-M8 where each stage is independently reversible via a named flag in `.agent/config.md` (`events_shadow`, `canonical_task_dir`, `lead_state_v2`, `knowledge_lessons`, `hooks_v2`, `registry_generated`, `mcp_only_ops`, `contract_enforcement`). Rendered-view shims keep legacy consumers working across every rename. Rollback is a flag flip + `state_rebuild` replay, never a `git revert`. Three consecutive green CI runs required before a forward-only trapdoor opens.
 - **From**: ADV007-T020
 
+## Four-plus-two downstream adventure sequence for Ark core unification
+- **Context**: ADV-011 produced a unified descriptor/builder/controller design across ADV-001..008 + ADV-010. Implementing the unification is not one adventure — it touches grammar (stdlib consolidation), codegen (builder harness), runtime (controller subsystems), and observability (Plan integration).
+- **Decision**: Downstream work is exactly 4 mandatory serial adventures + 2 admitted optionals. Mandatory: ADV-DU (Descriptor Unification — grammar/parser/stdlib restructuring) → ADV-BC (Builder Consolidation — shared Z3 harness + codegen) → ADV-CC (Controller Consolidation — 7 subsystem unification) → ADV-OP (Observability & Plan — ADV-010 telemetry integration). Optional: ADV-CE (Code Evolution — Darwinian git-organism evolver, admitted via pruning-catalog forward-ref) and ADV-UI (UI Surface — HTML rendering + screenshot pipeline, admitted via 6 DEFERRED-TO rows + 4 OUT-OF-SCOPE rows). ADV-UI depends on `none` but is scheduled after ADV-OP. No mix-and-match ordering.
+- **From**: ADV-011 T010
+
 ## Ark-as-host-language dogfooded via external package
 - **Context**: ADV-008 needed to build ShapeML-style procedural shape grammar. Options were: extend Ark core with new syntax, or build a consumer package that imports Ark as a library.
 - **Decision**: `shape_grammar/` sits next to `ark/` in R:/Sandbox with a strict one-way `shape_grammar -> ark` dependency. Shape grammars are ordinary Ark islands using existing syntax (no Lark grammar changes, no new AST nodes). The `shape_grammar` package provides evaluator, verifier passes, codegen, and runtime. Rationale: keeps Ark core stable while proving real external-consumer ergonomics. Feasibility study (T03) found 9 EXPRESSIBLE entities, 2 NEEDS_WORKAROUND, 0 BLOCKED — host-language adequacy confirmed.
 - **From**: ADV-008
+
+## Stdlib-only YAML-subset parser for config frontmatter
+- **Context**: The telemetry cost model needs to read token rates from `.agent/config.md` YAML frontmatter, but Python stdlib has no YAML parser. Options were: add PyYAML as a dependency, or hand-roll a narrow subset reader.
+- **Decision**: Hand-roll a ~40 LOC YAML-subset reader that handles flat mappings and one level of nesting (2-space indent, `key: scalar` pairs). Rejects anything beyond the subset with a `CostModelError` including the line number. Rationale: avoids adding PyYAML as a dependency; the config surface is narrow enough that a full parser is unnecessary; the subset reader is fully tested with happy-path and error fixtures.
+- **From**: ADV-010, design-cost-model.md
+
+## Reconstruct-vs-fake for historical telemetry rows
+- **Context**: ADV-001..ADV-009 had incomplete or missing metrics rows. Options were: (a) fabricate plausible-looking data, (b) reconstruct from available evidence with explicit confidence grading, (c) leave gaps.
+- **Decision**: Reconstruct from four sources (existing rows, adventure.log, git history, task-file logs) with a mandatory `Confidence` column that is never `high` for backfilled rows. Unreconstructable tasks emit a row with `result: unrecoverable` and `confidence: estimated` rather than being silently skipped. Rationale: preserves data provenance; never confuses reconstructed data with live-captured data; the `unrecoverable` sentinel keeps `agent_runs > 0` (satisfies autotests) while making gaps visible.
+- **From**: ADV-010, design-backfill-strategy.md

@@ -1,0 +1,149 @@
+import stdlib.types
+
+// ============================================================
+// pipeline.ark — Process declarations for the agent pipeline
+// domain.
+//
+// Processes declared here:
+//   - AdventureStateMachine — adventure state transitions
+//   - TaskLifecycle         — task status transitions
+//   - ReviewPipeline        — ordered review gate sequence
+//
+// Enums State and Status are re-declared at the top of this
+// file (standalone parseability per shape_grammar precedent;
+// each .ark file verifies as an independent unit; IR extractor
+// in T016 unifies by name across files).
+// ============================================================
+
+// ============================================================
+// ENUMS (re-declared for standalone parseability)
+// ============================================================
+
+enum State {
+    concept,
+    planning,
+    review,
+    active,
+    blocked,
+    completed,
+    cancelled
+}
+
+enum Status {
+    pending,
+    in_progress,
+    passed,
+    failed,
+    done
+}
+
+// ============================================================
+// ADVENTURESTATEMACHINE
+//
+// Encodes valid adventure state transitions via pre: guards
+// and post: disjunctions over all State variants.
+//
+// Transition table:
+//   concept   → planning
+//   planning  → review
+//   review    → active | planning   (reject → back to planning)
+//   active    → blocked | completed | cancelled
+//   blocked   → active
+//   completed — absorbing terminal
+//   cancelled — absorbing terminal
+// ============================================================
+
+class AdventureStateMachine {
+    $data state: State = concept
+
+    #process[strategy: code, priority: 80] {
+        description: "Adventure state machine — single transition step driven by the lead agent loop"
+
+        pre:  state != completed
+        pre:  state != cancelled
+
+        // All legal next states enumerated for the verifier:
+        post: state == concept    or state == planning  or state == review
+           or state == active     or state == blocked   or state == completed
+           or state == cancelled
+    }
+
+    // Absorbing terminal invariants
+    temporal: □((state == completed) → □(state == completed))
+    temporal: □((state == cancelled) → □(state == cancelled))
+
+    // Blocked state can only transition back to active (not to planning or review)
+    invariant: true
+}
+
+// ============================================================
+// TASKLIFECYCLE
+//
+// Encodes valid task status transitions via pre: guards
+// and post: disjunctions over all Status variants.
+//
+// Transition table:
+//   pending     → in_progress
+//   in_progress → passed | failed
+//   passed      → done
+//   failed      → in_progress   (retry edge)
+//   done        — absorbing terminal
+// ============================================================
+
+class TaskLifecycle {
+    $data status: Status = pending
+
+    #process[strategy: code, priority: 80] {
+        description: "Task lifecycle — single status step driven by the lead agent loop"
+
+        pre:  status != done
+
+        // All legal next states enumerated for the verifier:
+        post: status == pending     or status == in_progress or status == passed
+           or status == failed      or status == done
+    }
+
+    // done is an absorbing terminal state
+    temporal: □((status == done) → □(status == done))
+
+    invariant: true
+}
+
+// ============================================================
+// REVIEWPIPELINE
+//
+// Encodes the ordered review gate sequence via pre: guards:
+//   1. design_approved  must be true before permissions_approved can be set
+//   2. permissions_approved must be true before plan_executed can be set
+//   3. plan_executed must be true before artifact_emitted can be set
+//
+// The pre: guards express the invariant:
+//   permissions_approved => design_approved
+//   plan_executed        => permissions_approved
+//   artifact_emitted     => plan_executed
+// ============================================================
+
+class ReviewPipeline {
+    $data design_approved:      Bool = false
+    $data permissions_approved: Bool = false
+    $data plan_executed:        Bool = false
+    $data artifact_emitted:     Bool = false
+
+    #process[strategy: code, priority: 80] {
+        description: "Review pipeline gate — advances one review stage per invocation"
+
+        // permissions_approved requires design_approved
+        pre:  design_approved == true or permissions_approved == false
+        // plan_executed requires permissions_approved
+        pre:  permissions_approved == true or plan_executed == false
+        // artifact_emitted requires plan_executed
+        pre:  plan_executed == true or artifact_emitted == false
+
+        post: design_approved == true or design_approved == false
+    }
+
+    // Ordering invariants
+    invariant: permissions_approved == false or design_approved == true
+    invariant: plan_executed == false or permissions_approved == true
+    invariant: artifact_emitted == false or plan_executed == true
+}

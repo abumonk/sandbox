@@ -120,7 +120,35 @@
       "Bash(xargs:*)",
       "Bash(cd:*)",
       "Bash(for:*)",
-      "Bash(bash:*)"
+      "Bash(bash:*)",
+      "Bash(git -C R:/Sandbox remote get-url origin)",
+      "Bash(git -C R:/Sandbox branch --show-current)"
+    ]
+  },
+  "hooks": {
+    "SubagentStop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .agent/telemetry/capture.py",
+            "timeout_ms": 5000
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .agent/telemetry/capture.py --event PostToolUse",
+            "timeout_ms": 5000
+          }
+        ]
+      }
     ]
   }
 }

@@ -1,0 +1,34 @@
+---
+adventure_id: ADV-004
+total_tokens_in: 0
+total_tokens_out: 0
+total_duration: 0
+total_cost: 0.00
+agent_runs: 0
+---
+
+## Agent Runs
+
+| Agent | Task | Model | Tokens In | Tokens Out | Duration | Turns | Result |
+|-------|------|-------|-----------|------------|----------|-------|--------|
+| adventure-planner | - | opus | 85000 | 32000 | 35min | 12 | complete |
+| implementer | ADV004-T002 | sonnet | 28000 | 2500 | 8min | 8 | passed |
+| implementer | ADV004-T003 | sonnet | 18000 | 2500 | 8min | 15 | passed |
+| implementer | ADV004-T001 | sonnet | 22000 | 5500 | 12min | 10 | passed |
+| implementer | ADV004-T004 | sonnet | 22000 | 3000 | 10min | 12 | passed |
+| implementer | ADV004-T005 | sonnet | 48000 | 5200 | 8min | 18 | done |
+| implementer | ADV004-T006 | sonnet | 12000 | 3500 | 8min | 12 | ready |
+| implementer | ADV004-T007 | sonnet | 12000 | 2800 | 8min | 12 | ready |
+| implementer | ADV004-T014 | sonnet | 18000 | 3200 | 15min | 12 | ready |
+| implementer | ADV004-T012 | sonnet | 28000 | 4200 | 8min | 12 | done |
+| implementer | ADV004-T013 | sonnet | 22000 | 3800 | 15min | 14 | passed |
+| implementer | ADV004-T009 | sonnet | 24000 | 3200 | 8min | 10 | ready |
+| implementer | ADV004-T008 | sonnet | 22000 | 4800 | 8min | 12 | passed |
+| implementer | ADV004-T015 | sonnet | 24000 | 3200 | 8min | 14 | passed |
+| implementer | ADV004-T016 | sonnet | 32000 | 4500 | 10min | 14 | passed |
+| implementer | ADV004-T010 | sonnet | 18500 | 3200 | 25min | 18 | passed |
+| implementer | ADV004-T017 | sonnet | 12000 | 1500 | 5min | 6 | passed |
+| implementer | ADV004-T018 | sonnet | 18000 | 1200 | 8min | 12 | passed |
+| implementer | ADV004-T011 | sonnet | 12000 | 2500 | 180s | 12 | done |
+| adventure-reviewer | ADV-004 | opus | 85000 | 12000 | 5min | 8 | complete |
+| knowledge-extractor | ADV-004 | sonnet | 8200 | 420 | 1min | 6 | complete |

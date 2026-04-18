@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sandbox Roadmap</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --panel-2: #1c232c;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --accent: #58a6ff;
+    --ok: #3fb950;
+    --warn: #d29922;
+    --err: #f85149;
+    --info: #a5a5ff;
+    --pill-completed: #238636;
+    --pill-active: #1f6feb;
+    --pill-review: #9e6a03;
+    --pill-planning: #6e40c9;
+    --pill-planned: #484f58;
+    --pill-admitted: #30363d;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Ubuntu,
+      "Helvetica Neue", sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  header {
+    padding: 32px 48px 16px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, #10161d 0%, var(--bg) 100%);
+  }
+  h1 {
+    margin: 0 0 4px;
+    font-size: 26px;
+    letter-spacing: -0.01em;
+  }
+  h1 .sub {
+    color: var(--muted);
+    font-weight: 400;
+    font-size: 14px;
+    margin-left: 12px;
+  }
+  .meta {
+    color: var(--muted);
+    font-size: 12px;
+  }
+  main {
+    padding: 24px 48px 64px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin-bottom: 32px;
+  }
+  .stat {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .stat .label {
+    color: var(--muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .stat .value {
+    font-size: 22px;
+    font-weight: 600;
+    margin-top: 4px;
+  }
+  .stat .value .sep {
+    color: var(--muted);
+    font-weight: 400;
+  }
+  .stat .value .den {
+    color: var(--muted);
+    font-weight: 400;
+    font-size: 16px;
+  }
+  h2 {
+    font-size: 18px;
+    margin: 32px 0 12px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+  .projects {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 16px;
+  }
+  .project {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+  }
+  .project h3 {
+    margin: 0 0 4px;
+    font-size: 15px;
+  }
+  .project .desc {
+    color: var(--muted);
+    font-size: 12px;
+    margin-bottom: 12px;
+  }
+  .adv-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .adv {
+    display: grid;
+    grid-template-columns: 78px 1fr auto;
+    gap: 10px;
+    align-items: center;
+    padding: 6px 8px;
+    border-radius: 6px;
+    background: var(--panel-2);
+    font-size: 12px;
+  }
+  .adv .id {
+    font-family: "SF Mono", Consolas, monospace;
+    color: var(--accent);
+  }
+  .adv .title {
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .pill {
+    display: inline-block;
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 600;
+    color: #fff;
+  }
+  .pill.completed { background: var(--pill-completed); }
+  .pill.active    { background: var(--pill-active); }
+  .pill.review    { background: var(--pill-review); }
+  .pill.planning  { background: var(--pill-planning); }
+  .pill.planned   { background: var(--pill-planned); }
+  .pill.admitted  { background: var(--pill-admitted); border: 1px dashed var(--muted); }
+  .two-col {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr;
+    gap: 16px;
+    align-items: start;
+  }
+  @media (max-width: 900px) {
+    .two-col { grid-template-columns: 1fr; }
+    main, header { padding-left: 20px; padding-right: 20px; }
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+  }
+  .goals li {
+    margin-bottom: 8px;
+  }
+  .goals li strong { color: var(--accent); }
+  .graph {
+    font-family: "SF Mono", Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.35;
+    background: #0b1016;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    color: #c9d1d9;
+    white-space: pre;
+    overflow-x: auto;
+  }
+  .graph .node-done   { color: var(--ok); font-weight: 600; }
+  .graph .node-active { color: var(--accent); font-weight: 600; }
+  .graph .node-plan   { color: var(--warn); }
+  .graph .node-admit  { color: var(--muted); font-style: italic; }
+  .graph .arrow       { color: var(--muted); }
+  .session-notes {
+    font-size: 13px;
+  }
+  .session-notes .date {
+    color: var(--accent);
+    font-family: "SF Mono", Consolas, monospace;
+    font-weight: 600;
+  }
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 10px;
+  }
+  .shipped-card {
+    background: var(--panel);
+    border: 1px solid var(--pill-completed);
+    border-radius: 10px;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+  }
+  .shipped-card .shipped-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+  .shipped-card .shipped-id {
+    font-family: "SF Mono", Consolas, monospace;
+    color: var(--accent);
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .shipped-card .shipped-title {
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .shipped-card .shipped-summary {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.55;
+  }
+  footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: 11px;
+    padding: 24px 0;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Sandbox Roadmap <span class="sub">Ark DSL &middot; Claudovka Pipeline</span></h1>
+  <div class="meta">
+    Version <span id="version">—</span> &nbsp;&middot;&nbsp;
+    Last updated <span id="updated">—</span> &nbsp;&middot;&nbsp;
+    Source: <a href="roadmap.md">.agent/roadmap.md</a>
+  </div>
+</header>
+
+<main>
+
+  <section class="stats-grid" id="stats"></section>
+
+  <h2>Recently Shipped</h2>
+  <section class="projects" id="recently-shipped"></section>
+
+  <h2>Projects</h2>
+  <section class="projects" id="projects"></section>
+
+  <h2>Dependency Map</h2>
+  <div class="two-col">
+    <div class="card">
+      <pre class="graph" id="graph"></pre>
+      <div class="legend">
+        <span class="pill completed">completed</span>
+        <span class="pill active">active</span>
+        <span class="pill review">review</span>
+        <span class="pill planning">planning</span>
+        <span class="pill planned">planned</span>
+        <span class="pill admitted">admitted</span>
+      </div>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Strategic Goals</h3>
+      <ol class="goals" id="goals"></ol>
+    </div>
+  </div>
+
+  <h2>Session Notes</h2>
+  <div class="card session-notes" id="notes"></div>
+
+</main>
+
+<footer>
+  Sandbox ecosystem &middot; Ark + Claudovka &middot; generated view of <code>.agent/roadmap.md</code>
+</footer>
+
+<script>
+// ---- Embedded roadmap snapshot (mirrors .agent/roadmap.md) ----
+const ROADMAP = {
+  version: 1,
+  last_updated: "2026-04-18T00:00:00Z",
+  stats: {
+    total_adventures: 11,
+    completed_adventures: 11,
+    active_adventures: 0,
+    review_adventures: 0,
+    total_tasks: 185,
+    completed_tasks: 185,
+    total_tcs: 338,
+    passed_tcs: 50,
+  },
+  recently_shipped: [
+    {
+      id: "ADV-009",
+      title: "Adventure Console UI v2",
+      summary: "Reader-first control surface: custom layouts per document type, unified Documents tab with chip filter, depends-on chains, TC checklists, and a live cytoscape.js Pipeline graph with drag-to-connect editing.",
+    },
+    {
+      id: "ADV-010",
+      title: "Telemetry Capture",
+      summary: "SubagentStop hook + Python writer wiring every subagent completion into metrics.md; 239 backfilled rows across ADV-001..008 + live capture active. Cost model, aggregator, idempotency, and error isolation all ship with full autotest coverage.",
+    },
+  ],
+  projects: [
+    {
+      id: "ark-core",
+      name: "Ark Core (Descriptor / Builder / Controller)",
+      desc:
+        "Declarative DSL + toolchain describing a system once and driving parsing, verification, codegen, and runtime.",
+      adventures: [
+        ["ADV-001", "Expressif expression & predication", "completed"],
+        ["ADV-002", "CodeGraphContext island", "completed"],
+        ["ADV-003", "Studio hierarchy (roles, workflows, hooks)", "completed"],
+        ["ADV-004", "Hermes self-evolution pipeline", "completed"],
+        ["ADV-005", "Autonomous agent system", "completed"],
+        ["ADV-006", "Snip visual communication layer", "completed"],
+        ["ADV-007", "Claudovka ecosystem research", "completed"],
+        ["ADV-008", "ShapeML procedural shape grammar", "completed"],
+        ["ADV-011", "Ark Core Unification", "completed"],
+        ["ADV-DU", "Descriptor Unification", "planned"],
+        ["ADV-BC", "Builder Consolidation", "planned"],
+        ["ADV-CC", "Controller Cohesion", "planned"],
+        ["ADV-OP", "Operator surface & integration", "planned"],
+      ],
+    },
+    {
+      id: "console-ui",
+      name: "Adventure Console UI",
+      desc:
+        "Reader-first UI over .agent/adventure-console/ — custom layouts per document type, status pills, depends-on chains, target-condition checklists, and a live Pipeline graph tab (cytoscape.js).",
+      adventures: [["ADV-009", "Adventure Console UI v2", "completed"]],
+    },
+    {
+      id: "telemetry",
+      name: "Pipeline Telemetry",
+      desc:
+        "SubagentStop hook + Python writer populating metrics.md live; 239 backfilled rows across ADV-001..008; cost model, aggregator, idempotency, and error isolation ship with full autotest coverage.",
+      adventures: [["ADV-010", "Telemetry Capture", "completed"]],
+    },
+    {
+      id: "optional-sidebars",
+      name: "Optional Sidebars (post-unification)",
+      desc:
+        "Admitted by ADV-011's pruning catalogue as forward-references; not on the critical path. Revisit after DU→BC→CC→OP lands.",
+      adventures: [
+        ["ADV-CE", "Sidebar (admitted, unscheduled)", "admitted"],
+        ["ADV-UI", "Sidebar (admitted, unscheduled)", "admitted"],
+      ],
+    },
+  ],
+  goals: [
+    ["Unified Ark core", "complete DU→BC→CC→OP; then decide on CE/UI admission based on real demand."],
+    ["Zero-rework pipeline", "maintain the zero-iteration streak observed through ADV-011; promote patterns in .agent/knowledge/patterns.md (4 new patterns, 4 new issues added in this cycle)."],
+    ["Full telemetry", "ADV-010 shipped — every future adventure now populates metrics.md automatically. Backfill of 239 rows across ADV-001..008 complete."],
+    ["Operator surface", "ADV-009 shipped — adventure state readable at a glance; Pipeline tab renders the live adventure graph with drag-to-connect editing."],
+  ],
+  notes: [
+    {
+      date: "2026-04-18",
+      body:
+        "ADV-009 (Console UI v2, 21 tasks) and ADV-010 (Telemetry Capture, 18 tasks) both closed and reviewed. All 11 adventures now state: completed. Telemetry pipeline live: 239 backfilled rows + active capture via SubagentStop hook. Knowledge base expanded: 4 new patterns, 4 new issues, 2 new agent-memory feedback files.",
+    },
+    {
+      date: "2026-04-15",
+      body:
+        "ADV-011 closed; 22/22 TCs pass. 7 knowledge suggestions applied. Downstream roadmap (4+2) confirmed. ADV-010 approved, moving review→active. ADV-009 dispatching task planners. Honest-count note: passed_tcs:50 is a lower bound — only ADV-008 (28/28) and ADV-011 (22/22) have written pass status; ADV-001/004/005/006/007 manifest TC tables never moved off pending. Retro-backfill tracked under the telemetry adventure.",
+    },
+  ],
+};
+
+// ---- Rendering ----
+function el(tag, attrs = {}, children = []) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") e.className = v;
+    else if (k === "html") e.innerHTML = v;
+    else e.setAttribute(k, v);
+  }
+  for (const c of children) {
+    if (c == null) continue;
+    e.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
+  }
+  return e;
+}
+
+function renderHeader() {
+  document.getElementById("version").textContent = ROADMAP.version;
+  document.getElementById("updated").textContent = new Date(
+    ROADMAP.last_updated
+  ).toUTCString();
+}
+
+function renderStats() {
+  const s = ROADMAP.stats;
+  const items = [
+    ["Adventures", `${s.completed_adventures}`, `/ ${s.total_adventures} done`],
+    ["Active", s.active_adventures, "in flight"],
+    ["In review", s.review_adventures, "pending"],
+    ["Tasks", s.completed_tasks, `/ ${s.total_tasks}`],
+    ["Target conditions", s.passed_tcs, `/ ${s.total_tcs}`],
+  ];
+  const host = document.getElementById("stats");
+  for (const [label, val, den] of items) {
+    host.appendChild(
+      el("div", { class: "stat" }, [
+        el("div", { class: "label" }, [label]),
+        el("div", { class: "value" }, [
+          String(val),
+          den ? el("span", { class: "den" }, [" " + den]) : null,
+        ]),
+      ])
+    );
+  }
+}
+
+function renderProjects() {
+  const host = document.getElementById("projects");
+  for (const p of ROADMAP.projects) {
+    const list = el("div", { class: "adv-list" });
+    for (const [id, title, state] of p.adventures) {
+      list.appendChild(
+        el("div", { class: "adv" }, [
+          el("span", { class: "id" }, [id]),
+          el("span", { class: "title" }, [title]),
+          el("span", { class: "pill " + state }, [state]),
+        ])
+      );
+    }
+    host.appendChild(
+      el("div", { class: "project" }, [
+        el("h3", {}, [p.name]),
+        el("div", { class: "desc" }, [p.desc]),
+        list,
+      ])
+    );
+  }
+}
+
+function renderGraph() {
+  const g = `<span class="node-done">ADV-011</span> (Ark Core Unification) <span class="arrow">──►</span> <span class="node-plan">ADV-DU</span> <span class="arrow">──►</span> <span class="node-plan">ADV-BC</span> <span class="arrow">──►</span> <span class="node-plan">ADV-CC</span> <span class="arrow">──►</span> <span class="node-plan">ADV-OP</span>
+                                                                                │
+                                                           <span class="node-admit">ADV-CE</span> (admitted) <span class="arrow">◄─</span>──┤
+                                                           <span class="node-admit">ADV-UI</span> (admitted) <span class="arrow">◄─</span>──┘
+
+<span class="node-done">ADV-010</span> (telemetry, ✓ shipped)  <span class="arrow">──►</span> live metrics.md for every future adventure
+                                       239 backfilled rows, ADV-001..ADV-008
+                                       consumed by <span class="node-done">ADV-009</span>
+
+<span class="node-done">ADV-009</span> (console UI, ✓ shipped) <span class="arrow">──►</span> renders every adventure's state + Pipeline graph`;
+  document.getElementById("graph").innerHTML = g;
+}
+
+function renderRecentlyShipped() {
+  const host = document.getElementById("recently-shipped");
+  for (const s of ROADMAP.recently_shipped) {
+    host.appendChild(
+      el("div", { class: "shipped-card" }, [
+        el("div", { class: "shipped-header" }, [
+          el("span", { class: "shipped-id" }, [s.id]),
+          el("span", { class: "shipped-title" }, [s.title]),
+          el("span", { class: "pill completed" }, ["completed"]),
+        ]),
+        el("div", { class: "shipped-summary" }, [s.summary]),
+      ])
+    );
+  }
+}
+
+function renderGoals() {
+  const host = document.getElementById("goals");
+  for (const [head, body] of ROADMAP.goals) {
+    host.appendChild(el("li", { html: `<strong>${head}</strong> — ${body}` }));
+  }
+}
+
+function renderNotes() {
+  const host = document.getElementById("notes");
+  for (const n of ROADMAP.notes) {
+    host.appendChild(
+      el("p", {}, [
+        el("span", { class: "date" }, [n.date]),
+        "  ",
+        n.body,
+      ])
+    );
+  }
+}
+
+renderHeader();
+renderStats();
+renderRecentlyShipped();
+renderProjects();
+renderGraph();
+renderGoals();
+renderNotes();
+</script>
+</body>
+</html>

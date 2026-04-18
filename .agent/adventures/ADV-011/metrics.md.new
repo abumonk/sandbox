@@ -1,0 +1,27 @@
+---
+adventure_id: ADV-011
+total_tokens_in: 426000
+total_tokens_out: 123800
+total_duration: 2h 13min
+total_cost: 6.3990
+agent_runs: 14
+---
+
+## Agent Runs
+
+| Run ID | Timestamp | Agent | Task | Model | Tokens In | Tokens Out | Duration (s) | Turns | Cost (USD) | Result | Confidence |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 143f3da8dbe8 |  | planner | ADV011-T001 | opus | 22000 | 7500 | 240 | 1 | 0.4425 | ready | low |
+| 90bdeee2644b |  | planner | ADV011-T002 | opus | 18000 | 6000 | 240 | 1 | 0.3600 | ready | low |
+| c7452904eccf |  | implementer | ADV011-T003 | sonnet | 52000 | 14000 | 1500 | 8 | 0.1980 | done | low |
+| 28f2a3a001f4 |  | implementer | ADV011-T004 | sonnet | 38000 | 8500 | 900 | 6 | 0.1395 | ready | low |
+| 8bab5759426b |  | implementer | ADV011-T005 | sonnet | 32000 | 9500 | 900 | 6 | 0.1245 | ready | low |
+| 6b766f52e063 |  | planner | ADV011-T006 | opus | 32000 | 9500 | 360 | 1 | 0.6225 | ready | low |
+| 72be47f7a849 |  | planner | ADV011-T007 | opus | 34000 | 10500 | 360 | 1 | 0.6675 | ready | low |
+| 401611f8e962 |  | planner | ADV011-T008 | opus | 26000 | 8500 | 300 | 1 | 0.5175 | ready | low |
+| b06631d8a2b8 |  | planner | ADV011-T009 | opus | 30000 | 9000 | 300 | 1 | 0.5850 | ready | low |
+| 853323dfc5b5 |  | planner | ADV011-T010 | opus | 20000 | 7000 | 240 | 1 | 0.4050 | ready | low |
+| 0e065200976a |  | planner | ADV011-T011 | opus | 28000 | 9500 | 300 | 1 | 0.5625 | ready | low |
+| f757fd9d95d3 |  | planner | ADV011-T012 | opus | 14000 | 3800 | 180 | 1 | 0.2670 | ready | low |
+| 1e07075d6a00 |  | adventure-planner | - | opus | 35000 | 12000 | 1800 | 1 | 0.7050 | complete | medium |
+| 1f8969a59a9e |  | adventure-reviewer | ADV-011 | opus | 45000 | 8500 | 360 | 9 | 0.8025 | complete | low |

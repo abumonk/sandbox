@@ -1,0 +1,235 @@
+---
+id: ADV-010
+title: Telemetry Capture — Research, Plan, Design, Wire & Implement
+state: completed
+created: 2026-04-15T00:30:00Z
+updated: 2026-04-18T00:00:00Z
+approved: 2026-04-15T00:40:00Z
+tasks: [ADV010-T001, ADV010-T002, ADV010-T003, ADV010-T004, ADV010-T005, ADV010-T006, ADV010-T007, ADV010-T008, ADV010-T009, ADV010-T010, ADV010-T011, ADV010-T012, ADV010-T013, ADV010-T014, ADV010-T015, ADV010-T016, ADV010-T017, ADV010-T018]
+depends_on: []
+---
+
+## Concept
+
+**Problem.** Across ADV-001..ADV-007, every `metrics.md` carries
+`total_tokens_in: 0`, `total_tokens_out: 0`, `total_cost: 0.00`,
+`agent_runs: 0`. Only ADV-008 has populated telemetry — and even there
+the `## Agent Runs` rows were filled out after the fact, not captured
+live. The manifest also defines per-task `Est. Tokens / Est. Cost`
+columns with matching `Actual` columns that remain `—` in every
+completed adventure. The pipeline designs telemetry, but does not
+actually capture it.
+
+**Scope of this adventure.**
+
+1. **Research** — pinpoint *why* telemetry isn't being captured.
+   Candidates:
+   - No hook/agent writes to `metrics.md` at subagent completion.
+   - No plumbing from Claude's `usage` / `duration_ms` fields into the
+     `## Agent Runs` table.
+   - No aggregator that rolls agent-run rows into the frontmatter totals.
+   - No propagation from task-level actuals into the manifest
+     `## Evaluations` table.
+   - Possible schema drift between what the planner writes and what a
+     capture mechanism would need (e.g. adventure ID on every run).
+   - Cost model inconsistencies (opus vs sonnet rates; where defined?).
+   Deliverable: a `research/telemetry-gap-analysis.md` that lists each
+   concrete failure point with evidence (file paths + line numbers +
+   existing-vs-expected behaviour).
+
+2. **Plan** — break the fix into waves:
+   - Wave A: measurement sources (what signal exists, where, in what
+     format — SubagentStop hooks, SDK `usage` field, existing logs).
+   - Wave B: capture mechanism (hook or small Python writer that
+     appends rows to `metrics.md` and aggregates totals).
+   - Wave C: task-actuals pipeline (updating manifest
+     `## Evaluations` Actual* columns when a task completes).
+   - Wave D: backfill and verification on ADV-008 / ADV-009 live data.
+   - Wave E: tests + docs.
+
+3. **Design** — specify:
+   - The capture contract (what fields, what precision, when written).
+   - Cost model (rates per model ID, source of truth, how to keep
+     current).
+   - Aggregation rules (row append is append-only; frontmatter totals
+     recomputed from rows on every write).
+   - Idempotency (re-running a hook on the same event must not
+     double-count).
+   - Error handling (capture never blocks the pipeline; failures
+     surface as metrics-capture-error entries, not crashes).
+
+4. **Wire** — implement hooks/scripts so that **every** subagent
+   completion writes to the correct `metrics.md` and **every** task
+   completion updates the manifest actuals.
+
+5. **Implement** — the full mechanism, with tests, and prove it on
+   ADV-009 (currently active) as the live canary.
+
+6. **Autotests (proof-of-work gate).** Every deliverable in this
+   adventure must be provable by an automated test — no manual-only
+   target conditions. Tests live under
+   `.agent/adventures/ADV-010/tests/` and are discoverable by stdlib
+   `unittest`. Coverage must include:
+   - **Schema tests** — `metrics.md` frontmatter and row shape match
+     the contract (required fields, types, no extras, stable order).
+   - **Capture tests** — given a synthetic subagent-completion event
+     (fixture JSON), the capture mechanism writes exactly one row with
+     correct fields; running the same event twice does not double-write
+     (idempotency).
+   - **Aggregation tests** — frontmatter totals equal the sum of rows
+     across adversarial fixtures (empty, single row, multi-model mix,
+     partial failures).
+   - **Task-actuals tests** — on task completion, manifest
+     `## Evaluations` row for that task gains Actual Duration / Actual
+     Tokens / Actual Cost / Variance; variance formula is verified
+     against hand-computed values.
+   - **Cost-model tests** — rates-per-model table is the single source
+     of truth; cost-for-row is pure-function of (model, tokens_in,
+     tokens_out); unknown model ID produces a clear error, not $0.
+   - **Hook/isolation tests** — capture failure does not raise into
+     the pipeline (capture errors are logged to a dedicated channel
+     and do not abort the agent run).
+   - **Live-canary test** — after wiring, an end-to-end run of a
+     single real subagent on ADV-009 produces a non-zero populated
+     row and matching totals, asserted programmatically (not by eye).
+   - **Regression test** — running the full adventure-pipeline test
+     discover command exits 0; a CI-style one-liner must be recorded
+     in `tests/test-strategy.md`.
+
+   Every Target Condition generated by the planner must either use
+   `Proof Method: autotest` with a concrete unittest command, or
+   justify a `poc/manual` fallback in the TC's `Notes` (e.g. "requires
+   human to observe UI"). Default is autotest.
+
+**Success criteria.** For any future adventure:
+- Opening `metrics.md` after any agent run shows a populated row.
+- Frontmatter totals match the sum of the rows (verified by a
+  self-check test).
+- Manifest `## Evaluations` actuals fill in as tasks complete.
+- Variance column is computed automatically.
+- No pipeline stage can complete without writing its telemetry.
+- **`python -m unittest discover -s .agent/adventures/ADV-010/tests`
+  exits 0 and covers every claimed behaviour above.**
+
+## Approved Concept Decisions (2026-04-15)
+
+1. **Capture mechanism = both.** A Claude Code hook
+   (`SubagentStop` / `PostToolUse` in `~/.claude/settings.json` or
+   project-local `.claude/settings.json`) is the *trigger*; a Python
+   post-processor under `.agent/telemetry/` is the *writer*. The hook
+   passes the event payload (agent, task, model, usage, duration)
+   into the Python script via stdin/args; the script does all
+   parsing, cost lookup, `metrics.md` row append, frontmatter
+   recompute, and manifest-actuals update. Rationale: the hook gives
+   us guaranteed invocation on every subagent event; the Python
+   writer gives us testable, version-controlled logic we can unit-test
+   without faking the hook runtime.
+
+2. **Backfill = reconstruct.** ADV-001..ADV-007 (and any gaps in
+   ADV-008/ADV-009) must be **reconstructed** from every available
+   trail:
+   - `adventure.log` entries with agent-spawn / agent-complete markers.
+   - Git commit history (`git log --stat --pretty=format:...`) over
+     the adventure date range for per-task duration bounds.
+   - Task files' `## Log` sections for status transitions.
+   - Any already-populated `## Agent Runs` rows (ADV-008 has some).
+   - Claude Code session transcripts if locally available.
+   A dedicated backfill task (`tools/backfill.py`) reads these, emits
+   best-effort rows with a `confidence: high|medium|low|estimated`
+   column added to `metrics.md`, and flags unreconstructable periods
+   explicitly (`result: unrecoverable`) rather than faking zeros. A
+   backfill-specific autotest asserts that every completed adventure
+   ends with `agent_runs > 0` after the script runs.
+
+## Target Conditions
+
+Default Proof Method is `autotest`. Any TC using `poc`/`manual` lists
+its justification in the Notes column. All `autotest` TCs are
+discovered by `python -m unittest discover -s
+.agent/adventures/ADV-010/tests -v`.
+
+| ID | Description | Source | Design | Plan | Task(s) | Proof Method | Proof Command | Status | Notes |
+|----|-------------|--------|--------|------|---------|--------------|---------------|--------|-------|
+| TC-RS-1 | telemetry-gap-analysis.md exists with ≥8 numbered findings, each citing a file path + line range | concept/research | research/telemetry-gap-analysis.md | wave-a | T001 | poc | `test -f .agent/adventures/ADV-010/research/telemetry-gap-analysis.md && [ $(grep -cE "^## F[0-9]" .agent/adventures/ADV-010/research/telemetry-gap-analysis.md) -ge 8 ]` | pending | Document-existence check; structural rather than behavioural — autotest would just wrap the same grep |
+| TC-TS-1 | test-strategy.md maps every autotest TC to a named function | design-test-strategy | design-test-strategy | wave-a | T002 | autotest | `python -m unittest .agent/adventures/ADV-010/tests/test_regression.TestStrategyCoverage` | pending | |
+| TC-S-1 | metrics.md row header equals the 12-column declared order | schemas/row_schema | design-capture-contract | wave-a | T003, T016 | autotest | `python -m unittest .agent/adventures/ADV-010/tests/test_schema.TestRowHeader.test_row_header_columns_exact` | pending | |
+| TC-S-2 | metrics.md frontmatter has exactly the 6 declared keys | schemas/row_schema | design-aggregation-rules | wave-a | T003, T016 | autotest | `python -m unittest .agent/adventures/ADV-010/tests/test_schema.TestFrontmatter.test_frontmatter_keys_exact` | pending | |
+| TC-S-3 | Row parser rejects non-int tokens, bad Run ID, duplicate Run ID | schemas/row_schema | design-capture-contract | wave-a | T005, T016 | autotest | `python -m unittest .agent/adventures/ADV-010/tests/test_schema.TestRowParse.test_row_type_coercion` | pending | |
+| TC-CC-1 | validate_event rejects every documented invalid payload variant | design-capture-contract | design-capture-contract | wave-b | T005, T007, T016 | autotest | `python -m unittest .agent/adventures/ADV-010/tests/test_capture.TestValidate.test_validate_event_rejects_invalid` | pending | |
+| TC-CC-2 | Valid event writes exactly one row with every column correct | design-capture-contract | design-capture-contract | wave-b | T007, T016 | autotest | `python -m unittest .agent/adventures/ADV-010/tests/test_capture.TestWrite.test_valid_event_writes_one_row` | pending | |
+| TC-CC-3 | Replay of same event is idempotent (Run ID collision) | design-capture-contract | design-capture-contract | wave-b | T007, T016 | autotest | `python -m unittest .agent/adventures/ADV-010/tests/test_capture.TestWrite.test_replay_same_event_idempotent` | pending | |
+| TC-CC-4 | Row's Cost column equals cost_model output to 4dp | design-capture-contract | design-capture-contract | wave-b | T007, T016 | autotest | `python -m unittest .agent/adventures/ADV-010/tests/test_capture.TestWrite.test_row_cost_matches_cost_model` | pending | |
+| TC-CM-1 | cost_for("opus",85000,28000) equals hand-computed 1.695 | design-cost-model | design-cost-model | wave-b | T004, T016 | autotest | `python -m unittest .agent/adventures/ADV-010/tests/test_cost_model.TestCost.test_cost_for_opus_known_fixture` | pending | |
+| TC-CM-2 | Unknown model raises UnknownModelError, not 0.0 | design-cost-model | design-cost-model | wave-b | T004, T016 | autotest | `python -m unittest .agent/adventures/ADV-010/tests/test_cost_model.TestCost.test_unknown_model_raises` | pending | |
+| TC-CM-3 | normalize_model maps every alias correctly (≥6 cases) | design-cost-model | design-cost-model | wave-b | T004, T016 | autotest | `python -m unittest .agent/adventures/ADV-010/tests/test_cost_model.TestNormalize.test_normalize_model_aliases` | pending | |
+| TC-CM-4 | load_rates returns expected dict from current .agent/config.md | design-cost-model | design-cost-model | wave-b | T004, T016 | autotest | `python -m unittest .agent/adventures/ADV-010/tests/test_cost_model.TestRates.test_load_rates_from_config_md` | pending | |
+| TC-HI-1 | settings.local.json contains both SubagentStop + PostToolUse hooks pointing at capture.py | design-hook-integration | design-hook-integration | wave-b | T008, T016 | autotest | `python -m unittest .agent/adventures/ADV-010/tests/test_capture.TestHookConfig.test_settings_json_has_both_hooks` | pending | |
+| TC-HI-2 | settings.local.json's permissions.allow preserved byte-for-byte after hook install | design-hook-integration | design-hook-integration | wave-b | T008, T016 | autotest | `python -m unittest .agent/adventures/ADV-010/tests/test_capture.TestHookConfig.test_settings_json_preserves_permissions` | pending | |
+| TC-HI-3 | Subprocess-driven capture.py with valid stdin produces a row in fixture metrics.md | design-hook-integration | design-capture-contract | wave-b | T007, T016 | autotest | `python -m unittest .agent/adventures/ADV-010/tests/test_capture.TestSubprocess.test_capture_subprocess_happy_path` | pending | |
+| TC-HI-4 | Malformed JSON on stdin causes exit 0 + error log line | design-hook-integration | design-error-isolation | wave-b | T007, T016 | autotest | `python -m unittest .agent/adventures/ADV-010/tests/test_error_isolation.TestStdin.test_malformed_json_exits_zero` | pending | |
+| TC-AG-1 | Frontmatter total_tokens_in equals row sum | design-aggregation-rules | design-aggregation-rules | wave-b | T006, T016 | autotest | `python -m unittest .agent/adventures/ADV-010/tests/test_aggregator.TestRecompute.test_total_tokens_in_matches_rows` | pending | |
+| TC-AG-2 | All 5 frontmatter totals equal row sums (multi-fixture) | design-aggregation-rules | design-aggregation-rules | wave-b | T006, T016 | autotest | `python -m unittest .agent/adventures/ADV-010/tests/test_aggregator.TestRecompute.test_all_frontmatter_totals_match_rows` | pending | |
+| TC-AG-3 | recompute_frontmatter is byte-idempotent | design-aggregation-rules | design-aggregation-rules | wave-b | T006, T016 | autotest | `python -m unittest .agent/adventures/ADV-010/tests/test_aggregator.TestRecompute.test_recompute_idempotent` | pending | |
+| TC-AG-4 | update_task_actuals produces hand-verified Actual/Variance values | design-aggregation-rules | design-aggregation-rules | wave-c | T009, T010, T016 | autotest | `python -m unittest .agent/adventures/ADV-010/tests/test_task_actuals.TestUpdate.test_update_task_actuals_values` | pending | |
+| TC-AG-5 | update_task_actuals leaves all non-matching manifest rows byte-identical | design-aggregation-rules | design-aggregation-rules | wave-c | T009, T016 | autotest | `python -m unittest .agent/adventures/ADV-010/tests/test_task_actuals.TestUpdate.test_update_leaves_other_rows_byte_equal` | pending | |
+| TC-AG-6 | format_duration handles min/sec/h+min cases (≥6 cases) | design-aggregation-rules | design-aggregation-rules | wave-b | T006, T016 | autotest | `python -m unittest .agent/adventures/ADV-010/tests/test_aggregator.TestFormatDuration.test_format_duration_table_driven` | pending | |
+| TC-EI-1 | PayloadError caught inside main() → exit 0 | design-error-isolation | design-error-isolation | wave-b | T007, T016 | autotest | `python -m unittest .agent/adventures/ADV-010/tests/test_error_isolation.TestExit.test_payload_error_exit_zero` | pending | |
+| TC-EI-2 | WriteError on read-only target → exit 0 + 1 error log line | design-error-isolation | design-error-isolation | wave-b | T007, T016 | autotest | `python -m unittest .agent/adventures/ADV-010/tests/test_error_isolation.TestExit.test_write_error_logs_and_exits_zero` | pending | |
+| TC-EI-3 | KeyboardInterrupt is NOT caught (propagates) | design-error-isolation | design-error-isolation | wave-b | T007, T016 | autotest | `python -m unittest .agent/adventures/ADV-010/tests/test_error_isolation.TestExit.test_keyboard_interrupt_propagates` | pending | |
+| TC-EI-4 | capture-errors.log lines are valid JSON with {ts,exc,msg} | design-error-isolation | design-error-isolation | wave-b | T007, T016 | autotest | `python -m unittest .agent/adventures/ADV-010/tests/test_error_isolation.TestLog.test_error_log_is_valid_jsonl` | pending | |
+| TC-EI-5 | After simulated mid-capture failure, next capture heals frontmatter drift | design-error-isolation | design-error-isolation | wave-b | T007, T010, T016 | autotest | `python -m unittest .agent/adventures/ADV-010/tests/test_error_isolation.TestHeal.test_frontmatter_heals_after_partial_fail` | pending | |
+| TC-BF-1 | After backfill on every completed adventure, agent_runs > 0 | design-backfill-strategy | design-backfill-strategy | wave-d | T013, T016 | autotest | `python -m unittest .agent/adventures/ADV-010/tests/test_backfill.TestApply.test_every_completed_adventure_has_runs` | pending | |
+| TC-BF-2 | ADV-008 backfill preserves row numerics, strips tildes | design-backfill-strategy | design-backfill-strategy | wave-d | T011, T013, T016 | autotest | `python -m unittest .agent/adventures/ADV-010/tests/test_backfill.TestPreserve.test_adv008_rows_preserved_tildes_stripped` | pending | |
+| TC-BF-3 | Backfill is byte-idempotent across runs | design-backfill-strategy | design-backfill-strategy | wave-d | T012, T016 | autotest | `python -m unittest .agent/adventures/ADV-010/tests/test_backfill.TestIdempotent.test_backfill_idempotent` | pending | |
+| TC-BF-4 | Backfill-emitted rows never use Confidence=high | design-backfill-strategy | design-backfill-strategy | wave-d | T012, T016 | autotest | `python -m unittest .agent/adventures/ADV-010/tests/test_backfill.TestConfidence.test_backfill_rows_never_high_confidence` | pending | |
+| TC-BF-5 | Unreconstructable task → row with result=unrecoverable | design-backfill-strategy | design-backfill-strategy | wave-d | T012, T016 | autotest | `python -m unittest .agent/adventures/ADV-010/tests/test_backfill.TestUnrecoverable.test_unreconstructable_row_emitted` | pending | |
+| TC-BF-6 | backfill without --apply does not modify original metrics.md | design-backfill-strategy | design-backfill-strategy | wave-d | T012, T016 | autotest | `python -m unittest .agent/adventures/ADV-010/tests/test_backfill.TestReversible.test_no_apply_does_not_modify_original` | pending | |
+| TC-LC-1 | Live canary: a real subagent run on ADV-009 produces a populated row + matching frontmatter | concept §6 (live-canary) | design-capture-contract | wave-d | T014, T016 | autotest | `python -m unittest .agent/adventures/ADV-010/tests/test_live_canary.TestCanary.test_adv009_canary_row_populated` | pending | Operationally requires the operator to first invoke a real subagent (T014); the test reads pre/post fixture snapshots, so it is fully autotest once those exist |
+| TC-RG-1 | Full discover+run exits 0 (CI gate) | concept §6 (regression) | design-test-strategy | wave-e | T016 | autotest | `python -m unittest .agent/adventures/ADV-010/tests/test_regression.TestDiscover.test_full_discover_exits_zero` | pending | |
+
+## Evaluations
+
+Cost rates (from `.agent/config.md`): opus $0.015/1K, sonnet
+$0.003/1K, haiku $0.001/1K. All ADV-010 implementation tasks use
+sonnet; the planner uses opus.
+
+| Task | Access Requirements | Skill Set | Est. Duration | Est. Tokens | Est. Cost | Actual Duration | Actual Tokens | Actual Cost | Variance |
+|------|---------------------|-----------|---------------|-------------|-----------|-----------------|---------------|-------------|----------|
+| ADV010-T001 | Read(.agent/**), Write(research/) | technical writing, filesystem forensics | 20min | 35000 | $0.105 | — | — | — | — |
+| ADV010-T002 | Read(designs,schemas), Write(tests/) | unittest, test-to-requirement mapping | 15min | 25000 | $0.075 | — | — | — | — |
+| ADV010-T003 | Read, Write(schemas/), Edit(designs/design-hook-integration.md) | schema design, dataclass typing | 15min | 20000 | $0.060 | — | — | — | — |
+| ADV010-T004 | Read(.agent/config.md), Write(.agent/telemetry/) | Python, YAML subset parsing | 25min | 40000 | $0.120 | — | — | — | — |
+| ADV010-T005 | Read, Write(.agent/telemetry/) | dataclasses, hashlib, validators | 25min | 45000 | $0.135 | — | — | — | — |
+| ADV010-T006 | Read, Write(.agent/telemetry/) | file I/O, atomic renames | 25min | 40000 | $0.120 | — | — | — | — |
+| ADV010-T007 | Read, Write(.agent/telemetry/), Bash(python) | stdin/stdout, subprocess, defensive exceptions | 30min | 60000 | $0.180 | — | — | — | — |
+| ADV010-T008 | Read, Edit(.claude/settings.local.json), Bash(jq, diff) | JSON merge without clobbering | 10min | 12000 | $0.036 | — | — | — | — |
+| ADV010-T009 | Read, Write(.agent/telemetry/) | markdown pipe-table editing, byte-preservation | 30min | 50000 | $0.150 | — | — | — | — |
+| ADV010-T010 | Read, Edit(.agent/telemetry/capture.py) | Python | 10min | 15000 | $0.045 | — | — | — | — |
+| ADV010-T011 | Read(.agent/, .git via shell), Write(.agent/telemetry/tools/reconstructors/), Bash(git log) | log parsing, git CLI, regex | 30min | 70000 | $0.210 | — | — | — | — |
+| ADV010-T012 | Read, Write(.agent/telemetry/tools/) | Python CLI, diff generation, file renaming | 25min | 50000 | $0.150 | — | — | — | — |
+| ADV010-T013 | Read, Write(.agent/adventures/*/metrics.md), Bash(python -m, git) | operator care, diff review | 20min | 30000 | $0.090 | — | — | — | — |
+| ADV010-T014 | Read, Write(tests/fixtures/canary/), Task tool | Claude Code subagent invocation | 15min | 20000 | $0.060 | — | — | — | — |
+| ADV010-T015 | Write(tests/fixtures/) | realistic fixture crafting | 20min | 30000 | $0.090 | — | — | — | — |
+| ADV010-T016 | Read, Write(tests/), Bash(python -m unittest, subprocess) | unittest, subprocess-driven tests, tempdirs | 30min | 90000 | $0.270 | — | — | — | — |
+| ADV010-T017 | Read, Write(.agent/telemetry/README.md) | technical writing | 10min | 15000 | $0.045 | — | — | — | — |
+| ADV010-T018 | Read, Write(.agent/knowledge/) | technical writing | 10min | 15000 | $0.045 | — | — | — | — |
+
+**Adventure totals (estimated)**: 365 min (~6.1 h), 662,000 tokens,
+$1.986. Adventure-planner spawn cost (this run, opus, ~30K in /
+~12K out estimated) ≈ $0.63 separately.
+
+**Threshold check**: `max_task_tokens: 100000`,
+`max_task_duration: 30min`. Largest task is T016 at 90K tokens / 30
+min — at threshold but within. T016's task description includes
+explicit split-on-overrun guidance (see `plan-wave-e-tests-docs.md`).
+No other task exceeds either threshold.
+
+## Environment
+- **Project**: Sandbox (Claudovka ecosystem)
+- **Workspace**: R:\Sandbox
+- **Repo**: https://github.com/abumonk/sandbox.git
+- **Branch**: master
+- **PC**: TTT
+- **Platform**: Windows 11 Pro 10.0.26200
+- **Runtime**: Node v24.12.0, Python 3.12
+- **Shell**: bash

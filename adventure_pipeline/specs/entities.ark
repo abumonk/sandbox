@@ -1,0 +1,114 @@
+import stdlib.types
+
+// ============================================================
+// entities.ark — Runtime observational snapshot entities for
+// the agent pipeline domain.
+//
+// Runtime entities declared here:
+//   - RunningAgent        — snapshot of an agent currently executing
+//   - ActiveTask          — snapshot of a task currently in-flight
+//   - PendingDecision     — snapshot of an open decision gate
+//   - KnowledgeSuggestion — a suggested memory or knowledge update
+//   - ReviewArtifact      — output of a completed review pass
+//
+// Supporting enums re-declared here for standalone parseability:
+//   - DecisionKind        — mirrors adventure.ark
+//   - Verdict             — PASSED | FAILED (runtime review verdict)
+//
+// Each .ark file verifies as an independent unit; IR extractor
+// in T016 unifies enums by name across files.
+// ============================================================
+
+// ============================================================
+// ENUMS (re-declared for standalone parseability)
+// ============================================================
+
+enum DecisionKind {
+    approve_permissions,
+    approve_design,
+    state_transition,
+    knowledge_suggestion
+}
+
+enum Verdict {
+    PASSED,
+    FAILED
+}
+
+// ============================================================
+// RUNNINGAGENT — snapshot of an agent currently executing a task
+// ============================================================
+
+class RunningAgent {
+    $data name:       String = ""
+    $data task_id:    String = ""
+    $data started_at: Int    = 0
+
+    #process[strategy: code] {
+        description: "RunningAgent is an observational snapshot; updated by the orchestrator"
+    }
+
+    invariant: started_at >= 0
+}
+
+// ============================================================
+// ACTIVETASK — snapshot of a task currently in-flight
+// ============================================================
+
+class ActiveTask {
+    $data task_id:    String = ""
+    $data wave_index: Int    = 0
+    $data started_at: Int    = 0
+
+    #process[strategy: code] {
+        description: "ActiveTask is an observational snapshot of an in-progress task"
+    }
+
+    invariant: wave_index >= 0
+    invariant: started_at >= 0
+}
+
+// ============================================================
+// PENDINGDECISION — snapshot of an open decision gate
+// ============================================================
+
+class PendingDecision {
+    $data decision_kind: DecisionKind = approve_design
+    $data adventure_id:  String       = ""
+    $data opened_at:     Int          = 0
+
+    #process[strategy: code] {
+        description: "PendingDecision records an open gate blocking adventure progress"
+    }
+
+    invariant: opened_at >= 0
+}
+
+// ============================================================
+// KNOWLEDGESUGGESTION — a suggested memory or knowledge update
+// ============================================================
+
+class KnowledgeSuggestion {
+    $data kind:        String = ""
+    $data text:        String = ""
+    $data source_task: String = ""
+
+    #process[strategy: code] {
+        description: "KnowledgeSuggestion is emitted by agents for the memory system"
+    }
+}
+
+// ============================================================
+// REVIEWARTIFACT — output of a completed review pass
+// ============================================================
+
+class ReviewArtifact {
+    $data task_id: String  = ""
+    $data verdict: Verdict = PASSED
+    $data issues:  String  = ""
+    $data path:    String  = ""
+
+    #process[strategy: code] {
+        description: "ReviewArtifact is the immutable output of one review pipeline pass"
+    }
+}

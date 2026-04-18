@@ -11,15 +11,18 @@ Run from the repo root::
 
 Endpoints
 ---------
-GET  /                                         -> index.html
-GET  /api/adventures                           -> list summary
-GET  /api/adventures/{id}                      -> full state bundle
-GET  /api/file?path=<relative-path>            -> raw file text
-POST /api/adventures/{id}/state                -> body {new_state, actor?}
-POST /api/adventures/{id}/permissions/approve  -> body {actor?}
-POST /api/adventures/{id}/design/approve       -> body {design: <basename>, actor?}
-POST /api/adventures/{id}/knowledge/apply      -> body {indices: [int], actor?}
-POST /api/adventures/{id}/log                  -> body {actor, message}
+GET  /                                                          -> index.html
+GET  /api/adventures                                            -> list summary
+GET  /api/adventures/{id}                                       -> full state bundle
+GET  /api/adventures/{id}/documents                             -> unified designs/plans/research/reviews list
+GET  /api/adventures/{id}/graph                                 -> {nodes, edges, explanations} payload
+GET  /api/file?path=<relative-path>                             -> raw file text
+POST /api/adventures/{id}/state                                 -> body {new_state, actor?}
+POST /api/adventures/{id}/permissions/approve                   -> body {actor?}
+POST /api/adventures/{id}/design/approve                        -> body {design: <basename>, actor?}
+POST /api/adventures/{id}/knowledge/apply                       -> body {indices: [int], actor?}
+POST /api/adventures/{id}/log                                   -> body {actor, message}
+POST /api/adventures/{id}/tasks/{task_id}/depends_on            -> body {depends_on: <task_id>, actor?}
 
 All write endpoints append a line to <adventure>/adventure.log.
 """
@@ -42,6 +45,12 @@ AGENT_DIR = REPO_ROOT / ".agent"
 ADVENTURES_DIR = AGENT_DIR / "adventures"
 CONSOLE_DIR = REPO_ROOT / ".agent" / "adventure-console"
 INDEX_HTML = CONSOLE_DIR / "index.html"
+
+# Make the sibling adventure_pipeline package importable regardless of where
+# the server is launched from.  Inserted into sys.path defensively; import is
+# deferred to _load_ir() via importlib so this module stays AST-stdlib-clean.
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 
 # ---------------------------------------------------------------------------
@@ -177,6 +186,53 @@ def _target_conditions(body: str) -> list[dict]:
     return rows
 
 
+_TC_PASSED_TOKENS = {"passed", "pass", "done", "complete", "completed", "yes"}
+_TC_FAILED_TOKENS = {"failed", "fail", "error", "no", "broken"}
+
+
+def _bucket_tc_status(raw: str) -> str:
+    """Normalize a raw TC table status cell into 'passed', 'failed', or 'pending'."""
+    normalized = raw.strip().lower()
+    if normalized in _TC_PASSED_TOKENS:
+        return "passed"
+    if normalized in _TC_FAILED_TOKENS:
+        return "failed"
+    return "pending"
+
+
+def compute_next_action(meta: dict, permissions: dict | None, tcs: list, tasks: list) -> dict:
+    """Map adventure state (+ permissions status) to a next_action dict.
+
+    Returns a dict with keys: kind, label, state_hint.
+    Allowed kind values: approve_permissions, open_plan, resolve_blocker,
+    promote_concept, none.
+    """
+    state = (meta.get("state") or "unknown").lower()
+
+    if state == "blocked":
+        return {"kind": "resolve_blocker", "label": "Resolve Blocker", "state_hint": state}
+
+    if state == "concept":
+        return {"kind": "promote_concept", "label": "Promote to Planning", "state_hint": state}
+
+    if state == "review":
+        perm_status = ""
+        if permissions:
+            perm_status = (permissions.get("status") or "").lower()
+        if perm_status != "approved":
+            return {"kind": "approve_permissions", "label": "Approve Permissions", "state_hint": state}
+        return {"kind": "open_plan", "label": "Open Plan", "state_hint": state}
+
+    if state == "planning":
+        return {"kind": "open_plan", "label": "Open Plan", "state_hint": state}
+
+    if state == "active":
+        return {"kind": "open_plan", "label": "Continue Execution", "state_hint": state}
+
+    # completed, cancelled, unknown, or any other value
+    return {"kind": "none", "label": "", "state_hint": state}
+
+
 def get_adventure(adv_id: str) -> dict:
     root = adventure_path(adv_id)
     if not root.exists():
@@ -259,6 +315,26 @@ def get_adventure(adv_id: str) -> dict:
     if log_path.exists():
         log_tail = read_text(log_path).splitlines()[-40:]
 
+    # Summary block — computed from parsed data, not persisted
+    tc_buckets: dict[str, int] = {"passed": 0, "failed": 0, "pending": 0}
+    for tc in tcs:
+        bucket = _bucket_tc_status(tc.get("status", ""))
+        tc_buckets[bucket] += 1
+
+    tasks_by_status: dict[str, int] = {}
+    for task in tasks:
+        s = task.get("status") or "unknown"
+        tasks_by_status[s] = tasks_by_status.get(s, 0) + 1
+
+    summary = {
+        "tc_total": len(tcs),
+        "tc_passed": tc_buckets["passed"],
+        "tc_failed": tc_buckets["failed"],
+        "tc_pending": tc_buckets["pending"],
+        "tasks_by_status": tasks_by_status,
+        "next_action": compute_next_action(meta, permissions, tcs, tasks),
+    }
+
     return {
         "id": meta.get("id", adv_id),
         "title": meta.get("title", ""),
@@ -279,7 +355,135 @@ def get_adventure(adv_id: str) -> dict:
         "permissions": permissions,
         "adventure_report": adventure_report,
         "log_tail": log_tail,
+        "summary": summary,
     }
+
+
+# ---------------------------------------------------------------------------
+# Document helpers
+# ---------------------------------------------------------------------------
+
+
+def _first_heading(text: str) -> str:
+    """Return the text of the first H1 line (# ...), stripped. Returns '' if absent."""
+    for line in text.splitlines():
+        if line.startswith("# ") and not line.startswith("## "):
+            return line[2:].strip()
+    return ""
+
+
+def _design_one_liner(text: str) -> str:
+    """Extract the first sentence of the ## Overview section, capped at 120 chars."""
+    m = re.search(r"^## Overview\s*\n(.*?)(?=\n## |\Z)", text, re.DOTALL | re.MULTILINE)
+    if not m:
+        return ""
+    block = m.group(1)
+    # Find the first non-empty, non-heading line
+    for line in block.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        # Split on first sentence boundary: ". " or ".\n" or end-of-string
+        sentence_m = re.match(r"(.*?)\.(?:\s|$)", line)
+        if sentence_m:
+            sentence = sentence_m.group(1).strip()
+        else:
+            sentence = line
+        if len(sentence) > 120:
+            return sentence[:120] + "\u2026"
+        return sentence
+    return ""
+
+
+def _plan_metadata(text: str) -> tuple:
+    """Return (task_count, waves) for a plan document."""
+    lines = text.splitlines()
+    task_count = 0
+    waves = 0
+    in_tasks = False
+    for line in lines:
+        stripped = line.strip()
+        if re.match(r"^## Wave ", stripped) or re.match(r"^## Phase ", stripped):
+            waves += 1
+        if re.match(r"^## Tasks", stripped):
+            in_tasks = True
+            continue
+        if in_tasks and re.match(r"^## ", stripped):
+            in_tasks = False
+        if in_tasks and stripped.startswith("### "):
+            task_count += 1
+    return task_count, waves
+
+
+def _review_metadata(text: str) -> dict:
+    """Extract review frontmatter fields: task_id, status, build_result, test_result."""
+    meta, _ = parse_frontmatter(text)
+    return {
+        "task_id": meta.get("task_id", ""),
+        "status": meta.get("status", ""),
+        "build_result": meta.get("build_result", ""),
+        "test_result": meta.get("test_result", ""),
+    }
+
+
+def list_documents(adv_id: str) -> list:
+    """Return unified list of DocumentEntry records for an adventure."""
+    root = adventure_path(adv_id)
+    if not root.exists():
+        raise FileNotFoundError(f"adventure {adv_id} not found")
+
+    docs = []
+
+    # Designs
+    for fname in list_dir(root / "designs"):
+        fpath = root / "designs" / fname
+        text = read_text(fpath)
+        title = _first_heading(text) or fpath.stem
+        docs.append({
+            "type": "design",
+            "file": fname,
+            "title": title,
+            "one_liner": _design_one_liner(text),
+        })
+
+    # Plans
+    for fname in list_dir(root / "plans"):
+        fpath = root / "plans" / fname
+        text = read_text(fpath)
+        title = _first_heading(text) or fpath.stem
+        task_count, waves = _plan_metadata(text)
+        docs.append({
+            "type": "plan",
+            "file": fname,
+            "title": title,
+            "task_count": task_count,
+            "waves": waves,
+        })
+
+    # Research
+    for fname in list_dir(root / "research"):
+        fpath = root / "research" / fname
+        text = read_text(fpath)
+        title = _first_heading(text) or fpath.stem
+        docs.append({
+            "type": "research",
+            "file": fname,
+            "title": title,
+        })
+
+    # Reviews (skip adventure-report.md)
+    reviews_dir = root / "reviews"
+    if reviews_dir.exists():
+        for fname in list_dir(reviews_dir):
+            if fname == "adventure-report.md":
+                continue
+            fpath = reviews_dir / fname
+            text = read_text(fpath)
+            entry = {"type": "review", "file": fname}
+            entry.update(_review_metadata(text))
+            docs.append(entry)
+
+    return docs
 
 
 # ---------------------------------------------------------------------------
@@ -387,6 +591,352 @@ def record_knowledge_selection(adv_id: str, indices: list[int], actor: str) -> d
 
 
 # ---------------------------------------------------------------------------
+# Graph helpers + handlers
+# ---------------------------------------------------------------------------
+
+
+def _load_ir(adv_id: str):
+    """Load the AdventurePipelineIR for adv_id.
+
+    The adventure_pipeline package is imported lazily via importlib so that
+    static AST analysers (including TC-030's stdlib-only check) do not see it
+    as a top-level import.
+
+    Raises:
+        FileNotFoundError: if the adventure directory is missing (→ 404).
+        RuntimeError: wrapping any other extraction failure (→ 500).
+    """
+    import importlib
+    try:
+        ir_mod = importlib.import_module("adventure_pipeline.tools.ir")
+        extract_ir = ir_mod.extract_ir
+    except ImportError as exc:
+        raise RuntimeError(f"ir_extract: cannot import adventure_pipeline.tools.ir: {exc}") from exc
+
+    try:
+        return extract_ir(adv_id)
+    except FileNotFoundError:
+        raise
+    except Exception as exc:
+        raise RuntimeError(f"ir_extract: {exc}") from exc
+
+
+def _cycle_free(ir, task_id: str, new_dep: str) -> bool:
+    """Return True iff adding the edge task_id → new_dep would NOT create a cycle.
+
+    Self-loops (task_id == new_dep) are caught immediately.  For non-self
+    edges we check whether new_dep is already reachable from task_id via
+    existing depends_on edges (forward direction: task → its dependencies).
+    If it is, adding task_id → new_dep would close the loop.
+    """
+    if task_id == new_dep:
+        return False  # self-loop
+
+    # Build forward adjacency: fwd[T] = list of T's own dependencies.
+    # "task_id depends_on new_dep" means task_id → new_dep edge.
+    # A cycle exists if new_dep can already reach task_id via forward deps.
+    fwd: dict[str, list[str]] = {t.id: list(t.depends_on) for t in ir.tasks}
+
+    # BFS from new_dep along forward edges (each node's depends_on).
+    # If task_id is reachable, adding task_id → new_dep closes a cycle.
+    visited: set[str] = set()
+    queue = list(fwd.get(new_dep, []))
+    while queue:
+        node = queue.pop(0)
+        if node == task_id:
+            return False   # cycle detected
+        if node in visited:
+            continue
+        visited.add(node)
+        queue.extend(fwd.get(node, []))
+
+    return True  # no cycle
+
+
+def _rewrite_task_depends_on(adv_id: str, task_id: str, merged: list[str]) -> list[str]:
+    """Rewrite the depends_on: line in task frontmatter and update the updated: stamp.
+
+    Reads <adventure>/tasks/<task_id>.md, rewrites the ``depends_on:`` line to
+    the merged list in inline-list form ``[A, B, C]``, updates ``updated:``,
+    and writes the file back.
+
+    Raises:
+        FileNotFoundError: if the task file does not exist.
+        ValueError: if a multi-line block-style depends_on: sequence is detected.
+    """
+    task_path = adventure_path(adv_id) / "tasks" / f"{task_id}.md"
+    if not task_path.exists():
+        raise FileNotFoundError(f"task file not found: {task_path}")
+
+    text = read_text(task_path)
+    fm_match = _FM_RE.match(text)
+    if not fm_match:
+        raise ValueError(f"task file has no frontmatter: {task_id}")
+
+    fm_raw = fm_match.group(1)
+    body = fm_match.group(2)
+
+    # Reject block-style depends_on (multiline sequence starting with "depends_on:" then "- " items)
+    if re.search(r"^depends_on:\s*\n\s*-\s+", fm_raw, re.MULTILINE):
+        raise ValueError(
+            f"depends_on: is in block-list form in {task_id}.md; "
+            "refusing to rewrite — please convert to inline [A, B] form first"
+        )
+
+    inline_val = "[" + ", ".join(merged) + "]"
+    new_fm_lines = []
+    saw_depends = False
+    saw_updated = False
+    for line in fm_raw.splitlines():
+        if line.lstrip().startswith("depends_on:"):
+            new_fm_lines.append(f"depends_on: {inline_val}")
+            saw_depends = True
+        elif line.lstrip().startswith("updated:"):
+            new_fm_lines.append(f"updated: {now_iso()}")
+            saw_updated = True
+        else:
+            new_fm_lines.append(line)
+
+    if not saw_depends:
+        new_fm_lines.append(f"depends_on: {inline_val}")
+    if not saw_updated:
+        new_fm_lines.append(f"updated: {now_iso()}")
+
+    new_text = "---\n" + "\n".join(new_fm_lines) + "\n---\n" + body
+    write_text(task_path, new_text)
+    return merged
+
+
+def _slug(name: str) -> str:
+    """Simple slug: lowercase, spaces/slashes → hyphens, strip non-alphanumeric-dash."""
+    s = name.lower().replace(" ", "-").replace("/", "-")
+    return re.sub(r"[^a-z0-9\-]", "", s)
+
+
+def graph_payload(adv_id: str) -> dict:
+    """Build the {nodes, edges, explanations} payload for the /graph endpoint.
+
+    Loads the IR via _load_ir, transforms tasks/TCs/documents/phases into
+    Cytoscape-compatible node/edge objects.
+    """
+    ir = _load_ir(adv_id)
+
+    nodes: list[dict] = []
+    edges: list[dict] = []
+    explanations: dict[str, str] = {}
+
+    # --- Adventure node ---
+    nodes.append({"data": {
+        "id": "adv",
+        "kind": "adventure",
+        "label": f"{ir.id} {ir.title}",
+        "status": ir.state,
+    }})
+
+    # --- Phase nodes: derive from tasks' adventure_plan field ---
+    phase_names: list[str] = []
+    task_phase_map: dict[str, str] = {}   # task_id -> phase node id
+    for t in ir.tasks:
+        if t.adventure_plan:
+            pname = t.adventure_plan
+            if pname not in phase_names:
+                phase_names.append(pname)
+            task_phase_map[t.id] = f"phase:{_slug(pname)}"
+
+    for pname in phase_names:
+        pid = f"phase:{_slug(pname)}"
+        nodes.append({"data": {
+            "id": pid,
+            "kind": "phase",
+            "label": pname,
+            "parent": "adv",
+        }})
+
+    # --- Task nodes ---
+    for t in ir.tasks:
+        parent = task_phase_map.get(t.id, "adv")
+        nodes.append({"data": {
+            "id": f"task:{t.id}",
+            "kind": "task",
+            "label": f"{t.id} — {t.title}",
+            "status": t.status,
+            "parent": parent,
+        }})
+
+    # --- Document nodes ---
+    for doc in ir.documents:
+        doc_node_id = f"doc:{doc.id}"
+        nodes.append({"data": {
+            "id": doc_node_id,
+            "kind": "document",
+            "label": doc.title or doc.id,
+            "docKind": doc.kind,
+            "parent": "adv",
+        }})
+        explanations[doc_node_id] = f"{doc.kind}: {doc.title or doc.id}"
+
+    # --- TC nodes ---
+    for tc in ir.tcs:
+        tc_node_id = f"tc:{tc.id}"
+        nodes.append({"data": {
+            "id": tc_node_id,
+            "kind": "tc",
+            "label": tc.id,
+            "status": tc.status,
+            "parent": "adv",
+        }})
+        if tc.description:
+            explanations[tc_node_id] = f"{tc.id}: {tc.description}"
+
+    # --- Decision nodes ---
+    # permissions
+    perm_path = adventure_path(adv_id) / "permissions.md"
+    if perm_path.exists():
+        pmeta, _ = parse_frontmatter(read_text(perm_path))
+        perm_status = pmeta.get("status", "draft")
+        decision_perm_id = "decision:permissions"
+        nodes.append({"data": {
+            "id": decision_perm_id,
+            "kind": "decision",
+            "label": "Permissions",
+            "status": perm_status,
+            "parent": "adv",
+        }})
+        if perm_status != "approved":
+            explanations[decision_perm_id] = "Pending: approve permissions"
+        else:
+            explanations[decision_perm_id] = "Done: permissions approved"
+
+    # design approval decisions
+    designs_dir = adventure_path(adv_id) / "designs"
+    if designs_dir.exists():
+        for dpath in sorted(designs_dir.glob("*.md")):
+            dtext = read_text(dpath)
+            approved = "<!-- approved:" in dtext
+            dname = dpath.stem
+            decision_id = f"decision:design:{dname}"
+            nodes.append({"data": {
+                "id": decision_id,
+                "kind": "decision",
+                "label": f"Design: {dname}",
+                "status": "done" if approved else "pending",
+                "parent": "adv",
+            }})
+            if not approved:
+                explanations[decision_id] = f"Pending: approve design {dname}"
+            else:
+                explanations[decision_id] = f"Done: design {dname} approved"
+
+    # --- Edges: depends_on ---
+    for t in ir.tasks:
+        for dep in t.depends_on:
+            edge_id = f"e:dep:{dep}->{t.id}"
+            edges.append({"data": {
+                "id": edge_id,
+                "source": f"task:{dep}",
+                "target": f"task:{t.id}",
+                "kind": "depends_on",
+            }})
+
+    # --- Edges: satisfies (task → TC) ---
+    for t in ir.tasks:
+        for tc_id in t.target_conditions:
+            edge_id = f"e:tc:{t.id}->{tc_id}"
+            edges.append({"data": {
+                "id": edge_id,
+                "source": f"task:{t.id}",
+                "target": f"tc:{tc_id}",
+                "kind": "satisfies",
+            }})
+
+    # --- Edges: addresses (TC → document) ---
+    doc_ids_present = {doc.id for doc in ir.documents}
+    for tc in ir.tcs:
+        for ref_field in (tc.design, tc.plan):
+            if not ref_field or ref_field == "-":
+                continue
+            # ref_field may be a basename like "design-foo" or "design-foo.md"
+            ref_stem = ref_field.replace(".md", "")
+            if ref_stem in doc_ids_present:
+                edge_id = f"e:addr:{tc.id}->{ref_stem}"
+                edges.append({"data": {
+                    "id": edge_id,
+                    "source": f"tc:{tc.id}",
+                    "target": f"doc:{ref_stem}",
+                    "kind": "addresses",
+                }})
+
+    # --- Explanations: task deps ---
+    for t in ir.tasks:
+        if t.depends_on:
+            tid = f"task:{t.id}"
+            explanations[tid] = (
+                f"{t.id} depends on {', '.join(t.depends_on)} — gates downstream work."
+            )
+
+    return {"nodes": nodes, "edges": edges, "explanations": explanations}
+
+
+def add_task_dependency(adv_id: str, task_id: str, body: dict, actor: str) -> dict:
+    """Validate, cycle-check, and persist a new depends_on edge for a task.
+
+    Args:
+        adv_id:  Adventure ID (e.g. "ADV-007").
+        task_id: Task receiving the new dependency.
+        body:    Parsed JSON body; must contain "depends_on" key.
+        actor:   Actor name for the audit log.
+
+    Returns:
+        {"ok": True, "task_id": task_id, "depends_on": merged_list}
+
+    Raises:
+        ValueError: invalid IDs, self-cycle, unknown dep, or cycle (→ 400).
+        FileNotFoundError: unknown task_id (→ 404).
+    """
+    # Validate task_id format (already captured from route, but double-check)
+    if not re.fullmatch(r"ADV\d{3}-T\d{3}", task_id):
+        raise ValueError(f"invalid task id: {task_id!r}")
+
+    # Validate the requested dependency from request body
+    new_dep = body.get("depends_on")
+    if not new_dep or not isinstance(new_dep, str):
+        raise ValueError("body must include 'depends_on' as a non-empty string")
+    if not re.fullmatch(r"ADV\d{3}-T\d{3}", new_dep):
+        raise ValueError(f"invalid depends_on id: {new_dep!r}")
+
+    # Self-cycle check
+    if new_dep == task_id:
+        raise ValueError("self-cycle: task cannot depend on itself")
+
+    # Load IR to validate task membership and check for cycles
+    ir = _load_ir(adv_id)
+    task_ids = {t.id for t in ir.tasks}
+
+    if task_id not in task_ids:
+        raise FileNotFoundError(f"task {task_id} not in {adv_id}")
+    if new_dep not in task_ids:
+        raise ValueError(f"unknown task: {new_dep} — references a task not in this adventure")
+
+    # Cycle check
+    if not _cycle_free(ir, task_id, new_dep):
+        raise ValueError(f"would create dependency cycle: {task_id} -> {new_dep}")
+
+    # Dedup-preserving merge of existing deps + new_dep
+    existing = next((t.depends_on for t in ir.tasks if t.id == task_id), [])
+    merged: list[str] = list(existing)
+    if new_dep not in merged:
+        merged.append(new_dep)
+
+    # Persist the change
+    _rewrite_task_depends_on(adv_id, task_id, merged)
+
+    # Audit log
+    append_log(adv_id, actor or "console", f"depends_on: {task_id} += {new_dep}")
+
+    return {"ok": True, "task_id": task_id, "depends_on": merged}
+
+
+# ---------------------------------------------------------------------------
 # HTTP handler
 # ---------------------------------------------------------------------------
 
@@ -440,9 +990,19 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(200, list_adventures())
                 return
 
+            m = re.fullmatch(r"/api/adventures/(ADV-\d{3})/documents", path)
+            if m:
+                self._send_json(200, list_documents(m.group(1)))
+                return
+
             m = re.fullmatch(r"/api/adventures/(ADV-\d{3})", path)
             if m:
                 self._send_json(200, get_adventure(m.group(1)))
+                return
+
+            m = re.fullmatch(r"/api/adventures/(ADV-\d{3})/graph", path)
+            if m:
+                self._send_json(200, graph_payload(m.group(1)))
                 return
 
             if path == "/api/file":
@@ -460,6 +1020,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(404, {"error": f"no route: {path}"})
         except FileNotFoundError as e:
             self._send_json(404, {"error": str(e)})
+        except ValueError as e:
+            self._send_json(400, {"error": str(e)})
         except Exception as e:                 # noqa: BLE001
             traceback.print_exc()
             self._send_json(500, {"error": str(e), "trace": traceback.format_exc()})
@@ -495,6 +1057,17 @@ class Handler(BaseHTTPRequestHandler):
             if m:
                 append_log(m.group(1), actor, body.get("message", ""))
                 self._send_json(200, {"ok": True})
+                return
+
+            m = re.fullmatch(
+                r"/api/adventures/(ADV-\d{3})/tasks/(ADV\d{3}-T\d{3})/depends_on",
+                path,
+            )
+            if m:
+                self._send_json(
+                    200,
+                    add_task_dependency(m.group(1), m.group(2), body, actor),
+                )
                 return
 
             self._send_json(404, {"error": f"no route: {path}"})

@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Agent Telemetry Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg:          #0f141a;
+    --bg-alt:      #161d25;
+    --bg-hover:    #1d2731;
+    --border:      #2a343f;
+    --text:        #dbe1e8;
+    --muted:       #8a96a4;
+    --accent:      #5ab0ff;
+    --accent-dim:  #2d6ca8;
+    --ok:          #5fd38a;
+    --warn:        #f0b04a;
+    --err:         #e66a6a;
+    --card-bg:     #1a222d;
+    --card-border: #2a343f;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { min-height: 100%; background: var(--bg); color: var(--text);
+    font: 13px/1.5 "Segoe UI", Helvetica, Arial, sans-serif; }
+  h1 { font-size: 18px; font-weight: 700; color: var(--text); }
+  h2 { font-size: 14px; font-weight: 600; color: var(--accent); margin-bottom: 10px; }
+  a  { color: var(--accent); text-decoration: none; }
+  code { font: 12px "Cascadia Mono","Consolas",monospace;
+          background: var(--bg-alt); padding: 1px 4px; border-radius: 3px; }
+
+  /* Layout */
+  .page { max-width: 1200px; margin: 0 auto; padding: 20px 24px 60px; }
+  .header { display:flex; align-items:center; justify-content:space-between;
+             border-bottom: 1px solid var(--border); padding-bottom:12px; margin-bottom:20px; }
+  .meta { color: var(--muted); font-size:11px; }
+
+  /* KPI strip */
+  .kpi-strip { display:flex; flex-wrap:wrap; gap:12px; margin-bottom:24px; }
+  .kpi-card {
+    background: var(--card-bg); border: 1px solid var(--card-border);
+    border-radius: 6px; padding: 14px 18px; flex: 1; min-width: 140px;
+  }
+  .kpi-label { font-size:11px; color:var(--muted); text-transform:uppercase;
+                letter-spacing:.04em; margin-bottom:4px; }
+  .kpi-value { font-size:22px; font-weight:700; color:var(--text); }
+  .kpi-sub   { font-size:11px; color:var(--muted); margin-top:2px; }
+
+  /* Cards */
+  .card {
+    background: var(--card-bg); border: 1px solid var(--card-border);
+    border-radius: 6px; padding: 16px 18px; margin-bottom: 20px;
+  }
+
+  /* Two-col grid */
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:20px; }
+  @media(max-width:800px) { .grid2 { grid-template-columns:1fr; } }
+
+  /* Tables */
+  table { border-collapse:collapse; width:100%; font-size:12px; }
+  th, td { border:1px solid var(--border); padding:5px 8px;
+             text-align:left; vertical-align:middle; }
+  th { background:var(--bg-alt); font-weight:600; color:var(--muted);
+        text-transform:uppercase; font-size:11px; letter-spacing:.03em; }
+  tr:hover td { background:var(--bg-hover); }
+  .num { text-align:right; font-variant-numeric:tabular-nums; }
+
+  /* Scrollable table wrapper */
+  .table-wrap { overflow-x:auto; }
+
+  /* Confidence donut + legend side by side */
+  .pie-row { display:flex; align-items:flex-start; gap:24px; flex-wrap:wrap; }
+  .pie-legend { display:flex; flex-direction:column; gap:8px; padding-top:10px; }
+  .pie-legend-item { display:flex; align-items:center; gap:8px; font-size:12px; }
+  .swatch { width:14px; height:14px; border-radius:3px; flex-shrink:0; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Header -->
+  <div class="header">
+    <h1>Agent Telemetry Dashboard</h1>
+    <div class="meta">Generated 2026-04-18 16:38 UTC &nbsp;|&nbsp; 11 adventures</div>
+  </div>
+
+  <!-- KPI Strip -->
+  <div class="kpi-strip">
+    <div class="kpi-card">
+      <div class="kpi-label">Adventures</div>
+      <div class="kpi-value">11</div>
+      <div class="kpi-sub">all time</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Agent Runs</div>
+      <div class="kpi-value">264</div>
+      <div class="kpi-sub">263 rows parsed</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Tokens In</div>
+      <div class="kpi-value">5.15M</div>
+      <div class="kpi-sub">from frontmatter totals</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Tokens Out</div>
+      <div class="kpi-value">970.8K</div>
+      <div class="kpi-sub">from frontmatter totals</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Total Cost</div>
+      <div class="kpi-value">$54.3028</div>
+      <div class="kpi-sub">sum of adventure costs</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Total Duration</div>
+      <div class="kpi-value">68h 22m</div>
+      <div class="kpi-sub">wall-clock across adventures</div>
+    </div>
+  </div>
+
+  <!-- Per-adventure table -->
+  <div class="card">
+    <h2>Per-Adventure Summary</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Title</th>
+            <th>State</th>
+            <th class="num">Runs</th>
+            <th class="num">Tokens In</th>
+            <th class="num">Tokens Out</th>
+            <th class="num">Cost</th>
+            <th class="num">Duration</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td><code>ADV-001</code></td><td style="max-width:280px">Expressif-style Expression & Predication System in Ark DSL</td><td><span style="background:#5fd38a22;color:#5fd38a;border:1px solid #5fd38a66;border-radius:3px;padding:1px 6px;font-size:11px">completed</span></td><td style="text-align:right">36</td><td style="text-align:right">586.5K</td><td style="text-align:right">89.0K</td><td style="text-align:right">$6.2624</td><td style="text-align:right">2h 27m</td></tr>
+<tr><td><code>ADV-002</code></td><td style="max-width:280px">CodeGraphContext-style Code Knowledge Graph in Ark DSL</td><td><span style="background:#5fd38a22;color:#5fd38a;border:1px solid #5fd38a66;border-radius:3px;padding:1px 6px;font-size:11px">completed</span></td><td style="text-align:right">32</td><td style="text-align:right">156.5K</td><td style="text-align:right">35.2K</td><td style="text-align:right">$1.2111</td><td style="text-align:right">26h 1m</td></tr>
+<tr><td><code>ADV-003</code></td><td style="max-width:280px">Claude-Code-Game-Studios-style Studio Hierarchy in Ark DSL</td><td><span style="background:#5fd38a22;color:#5fd38a;border:1px solid #5fd38a66;border-radius:3px;padding:1px 6px;font-size:11px">completed</span></td><td style="text-align:right">31</td><td style="text-align:right">401.3K</td><td style="text-align:right">59.8K</td><td style="text-align:right">$1.5754</td><td style="text-align:right">18h 35m</td></tr>
+<tr><td><code>ADV-004</code></td><td style="max-width:280px">Hermes-style Agent Self-Evolution System in Ark DSL</td><td><span style="background:#5fd38a22;color:#5fd38a;border:1px solid #5fd38a66;border-radius:3px;padding:1px 6px;font-size:11px">completed</span></td><td style="text-align:right">23</td><td style="text-align:right">562.5K</td><td style="text-align:right">104.3K</td><td style="text-align:right">$4.5684</td><td style="text-align:right">5h 43m</td></tr>
+<tr><td><code>ADV-005</code></td><td style="max-width:280px">Hermes-style Autonomous Agent System in Ark DSL</td><td><span style="background:#5fd38a22;color:#5fd38a;border:1px solid #5fd38a66;border-radius:3px;padding:1px 6px;font-size:11px">completed</span></td><td style="text-align:right">24</td><td style="text-align:right">463.5K</td><td style="text-align:right">63.7K</td><td style="text-align:right">$2.2236</td><td style="text-align:right">2h 59m</td></tr>
+<tr><td><code>ADV-006</code></td><td style="max-width:280px">Snip-style Visual Communication Layer in Ark DSL</td><td><span style="background:#5fd38a22;color:#5fd38a;border:1px solid #5fd38a66;border-radius:3px;padding:1px 6px;font-size:11px">completed</span></td><td style="text-align:right">22</td><td style="text-align:right">349.0K</td><td style="text-align:right">52.2K</td><td style="text-align:right">$1.8396</td><td style="text-align:right">2h 4m</td></tr>
+<tr><td><code>ADV-007</code></td><td style="max-width:280px">Claudovka Ecosystem Roadmap — Research & Adventure Planning</td><td><span style="background:#5fd38a22;color:#5fd38a;border:1px solid #5fd38a66;border-radius:3px;padding:1px 6px;font-size:11px">completed</span></td><td style="text-align:right">26</td><td style="text-align:right">870.7K</td><td style="text-align:right">221.5K</td><td style="text-align:right">$14.9358</td><td style="text-align:right">4h 24m</td></tr>
+<tr><td><code>ADV-008</code></td><td style="max-width:280px">ShapeML-style Procedural Shape Grammar in Ark DSL + Semantic Rendering</td><td><span style="background:#5fd38a22;color:#5fd38a;border:1px solid #5fd38a66;border-radius:3px;padding:1px 6px;font-size:11px">completed</span></td><td style="text-align:right">21</td><td style="text-align:right">556.9K</td><td style="text-align:right">123.3K</td><td style="text-align:right">$3.0008</td><td style="text-align:right">3h 15m</td></tr>
+<tr><td><code>ADV-009</code></td><td style="max-width:280px">Adventure Console UI v2 — Simple, Reader-First Layout</td><td><span style="background:#5fd38a22;color:#5fd38a;border:1px solid #5fd38a66;border-radius:3px;padding:1px 6px;font-size:11px">completed</span></td><td style="text-align:right">25</td><td style="text-align:right">759.5K</td><td style="text-align:right">134.6K</td><td style="text-align:right">$10.9166</td><td style="text-align:right">2h 10m</td></tr>
+<tr><td><code>ADV-010</code></td><td style="max-width:280px">Telemetry Capture — Research, Plan, Design, Wire & Implement</td><td><span style="background:#5fd38a22;color:#5fd38a;border:1px solid #5fd38a66;border-radius:3px;padding:1px 6px;font-size:11px">completed</span></td><td style="text-align:right">23</td><td style="text-align:right">446.5K</td><td style="text-align:right">87.2K</td><td style="text-align:right">$7.7691</td><td style="text-align:right">43m 30s</td></tr>
+<tr><td><code>ADV-011</code></td><td style="max-width:280px">Ark Core Unification — Descriptor, Builder, Controller</td><td><span style="background:#5fd38a22;color:#5fd38a;border:1px solid #5fd38a66;border-radius:3px;padding:1px 6px;font-size:11px">completed</span></td><td style="text-align:right">1</td><td style="text-align:right">0</td><td style="text-align:right">0</td><td style="text-align:right">$0.0000</td><td style="text-align:right">0s</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Charts row 1 -->
+  <div class="grid2">
+    <!-- Cost by model -->
+    <div class="card">
+      <h2>Cost by Model</h2>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;margin:8px 0"><span style="display:inline-flex;align-items:center;gap:4px;margin-right:12px"><span style="width:12px;height:12px;border-radius:2px;background:#e88aff;display:inline-block"></span>opus</span><span style="display:inline-flex;align-items:center;gap:4px;margin-right:12px"><span style="width:12px;height:12px;border-radius:2px;background:#5ab0ff;display:inline-block"></span>sonnet</span><span style="display:inline-flex;align-items:center;gap:4px;margin-right:12px"><span style="width:12px;height:12px;border-radius:2px;background:#5fd38a;display:inline-block"></span>haiku</span><span style="display:inline-flex;align-items:center;gap:4px;margin-right:12px"><span style="width:12px;height:12px;border-radius:2px;background:#8a96a4;display:inline-block"></span>unknown</span></div>
+      <svg width="600" height="82" style="font:12px 'Segoe UI',sans-serif;overflow:visible">
+<text x="145" y="19" text-anchor="end" fill="#dbe1e8" font-size="11">opus</text>
+<rect x="150" y="0" width="400" height="30" fill="#243040" rx="3"/>
+<rect x="150" y="0" width="400" height="30" fill="#e88aff" rx="3"/>
+<text x="546" y="19" text-anchor="end" fill="#dbe1e8" font-size="11">$44.9145</text>
+<text x="145" y="55" text-anchor="end" fill="#dbe1e8" font-size="11">sonnet</text>
+<rect x="150" y="36" width="400" height="30" fill="#243040" rx="3"/>
+<rect x="150" y="36" width="83" height="30" fill="#5ab0ff" rx="3"/>
+<text x="239" y="55" text-anchor="start" fill="#dbe1e8" font-size="11">$9.3883</text>
+</svg>
+    </div>
+
+    <!-- Confidence breakdown -->
+    <div class="card">
+      <h2>Confidence Breakdown</h2>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;margin:8px 0"><span style="display:inline-flex;align-items:center;gap:4px;margin-right:12px"><span style="width:12px;height:12px;border-radius:2px;background:#5fd38a;display:inline-block"></span>high</span><span style="display:inline-flex;align-items:center;gap:4px;margin-right:12px"><span style="width:12px;height:12px;border-radius:2px;background:#f0b04a;display:inline-block"></span>medium</span><span style="display:inline-flex;align-items:center;gap:4px;margin-right:12px"><span style="width:12px;height:12px;border-radius:2px;background:#e66a6a;display:inline-block"></span>low</span><span style="display:inline-flex;align-items:center;gap:4px;margin-right:12px"><span style="width:12px;height:12px;border-radius:2px;background:#8a96a4;display:inline-block"></span>estimated</span></div>
+      <div class="pie-row">
+        <svg width="220" height="220" viewBox="0 0 220 220" style="font:11px 'Segoe UI',sans-serif">
+<path d="M 110.0,10.0 A 100,100 0 0 1 112.4,10.0 L 111.7,40.0 A 70,70 0 0 0 110.0,40.0 Z" fill="#5fd38a" opacity="0.9"><title>high: 1 (0.4%)</title></path>
+<path d="M 112.4,10.0 A 100,100 0 0 1 133.7,12.8 L 126.6,42.0 A 70,70 0 0 0 111.7,40.0 Z" fill="#f0b04a" opacity="0.9"><title>medium: 9 (3.4%)</title></path>
+<path d="M 133.7,12.8 A 100,100 0 1 1 14.3,138.8 L 43.0,130.2 A 70,70 0 1 0 126.6,42.0 Z" fill="#e66a6a" opacity="0.9"><title>low: 175 (66.5%)</title></path>
+<path d="M 14.3,138.8 A 100,100 0 0 1 110.0,10.0 L 110.0,40.0 A 70,70 0 0 0 43.0,130.2 Z" fill="#8a96a4" opacity="0.9"><title>estimated: 78 (29.7%)</title></path>
+<text x="110" y="104" text-anchor="middle" fill="#dbe1e8" font-size="18" font-weight="bold">263</text>
+<text x="110" y="122" text-anchor="middle" fill="#8a96a4" font-size="11">runs</text>
+</svg>
+        <div class="pie-legend">
+          <div class="pie-legend-item"><div class="swatch" style="background:#5fd38a"></div><span>high: <strong>1</strong></span></div><div class="pie-legend-item"><div class="swatch" style="background:#f0b04a"></div><span>medium: <strong>9</strong></span></div><div class="pie-legend-item"><div class="swatch" style="background:#e66a6a"></div><span>low: <strong>175</strong></span></div><div class="pie-legend-item"><div class="swatch" style="background:#8a96a4"></div><span>estimated: <strong>78</strong></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cost by agent stacked -->
+  <div class="card">
+    <h2>Cost by Agent (top 10, stacked by model)</h2>
+    <div style="display:flex;flex-wrap:wrap;gap:4px;margin:8px 0"><span style="display:inline-flex;align-items:center;gap:4px;margin-right:12px"><span style="width:12px;height:12px;border-radius:2px;background:#e88aff;display:inline-block"></span>opus</span><span style="display:inline-flex;align-items:center;gap:4px;margin-right:12px"><span style="width:12px;height:12px;border-radius:2px;background:#5ab0ff;display:inline-block"></span>sonnet</span><span style="display:inline-flex;align-items:center;gap:4px;margin-right:12px"><span style="width:12px;height:12px;border-radius:2px;background:#5fd38a;display:inline-block"></span>haiku</span><span style="display:inline-flex;align-items:center;gap:4px;margin-right:12px"><span style="width:12px;height:12px;border-radius:2px;background:#8a96a4;display:inline-block"></span>unknown</span></div>
+    <svg width="700" height="350" style="font:12px 'Segoe UI',sans-serif;overflow:visible">
+<text x="155" y="18" text-anchor="end" fill="#dbe1e8" font-size="11">planner</text>
+<rect x="160" y="0" width="500" height="28" fill="#243040" rx="3"/>
+<rect x="160" y="0" width="500" height="28" fill="#e88aff" title="opus: $15.8055"/>
+<text x="666" y="18" fill="#dbe1e8" font-size="11">$15.8055</text>
+<text x="155" y="52" text-anchor="end" fill="#dbe1e8" font-size="11">researcher</text>
+<rect x="160" y="34" width="500" height="28" fill="#243040" rx="3"/>
+<rect x="160" y="34" width="394" height="28" fill="#e88aff" title="opus: $12.4815"/>
+<text x="560" y="52" fill="#dbe1e8" font-size="11">$12.4815</text>
+<text x="155" y="86" text-anchor="end" fill="#dbe1e8" font-size="11">adventure-reviewer</text>
+<rect x="160" y="68" width="500" height="28" fill="#243040" rx="3"/>
+<rect x="160" y="68" width="266" height="28" fill="#e88aff" title="opus: $8.4225"/>
+<text x="432" y="86" fill="#dbe1e8" font-size="11">$8.4225</text>
+<text x="155" y="120" text-anchor="end" fill="#dbe1e8" font-size="11">implementer</text>
+<rect x="160" y="102" width="500" height="28" fill="#243040" rx="3"/>
+<rect x="160" y="102" width="262" height="28" fill="#5ab0ff" title="sonnet: $8.3118"/>
+<text x="428" y="120" fill="#dbe1e8" font-size="11">$8.3118</text>
+<text x="155" y="154" text-anchor="end" fill="#dbe1e8" font-size="11">adventure-planner</text>
+<rect x="160" y="136" width="500" height="28" fill="#243040" rx="3"/>
+<rect x="160" y="136" width="259" height="28" fill="#e88aff" title="opus: $8.2050"/>
+<text x="425" y="154" fill="#dbe1e8" font-size="11">$8.2050</text>
+<text x="155" y="188" text-anchor="end" fill="#dbe1e8" font-size="11">adventure-task-reviewer</text>
+<rect x="160" y="170" width="500" height="28" fill="#243040" rx="3"/>
+<rect x="160" y="170" width="23" height="28" fill="#5ab0ff" title="sonnet: $0.7334"/>
+<text x="189" y="188" fill="#dbe1e8" font-size="11">$0.7334</text>
+<text x="155" y="222" text-anchor="end" fill="#dbe1e8" font-size="11">knowledge-extractor</text>
+<rect x="160" y="204" width="500" height="28" fill="#243040" rx="3"/>
+<rect x="160" y="204" width="9" height="28" fill="#5ab0ff" title="sonnet: $0.3030"/>
+<text x="175" y="222" fill="#dbe1e8" font-size="11">$0.3030</text>
+<text x="155" y="256" text-anchor="end" fill="#dbe1e8" font-size="11">canary-implementer</text>
+<rect x="160" y="238" width="500" height="28" fill="#243040" rx="3"/>
+<rect x="160" y="238" width="1" height="28" fill="#5ab0ff" title="sonnet: $0.0401"/>
+<text x="167" y="256" fill="#dbe1e8" font-size="11">$0.0401</text>
+<text x="155" y="290" text-anchor="end" fill="#dbe1e8" font-size="11">unknown</text>
+<rect x="160" y="272" width="500" height="28" fill="#243040" rx="3"/>
+<text x="166" y="290" fill="#dbe1e8" font-size="11">$0.0000</text>
+<text x="155" y="324" text-anchor="end" fill="#dbe1e8" font-size="11">coder</text>
+<rect x="160" y="306" width="500" height="28" fill="#243040" rx="3"/>
+<text x="166" y="324" fill="#dbe1e8" font-size="11">$0.0000</text>
+</svg>
+  </div>
+
+  <!-- Recent high-confidence captures -->
+  <div class="card">
+    <h2>Recent High-Confidence Captures (last 20)</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Timestamp</th>
+            <th>Adventure</th>
+            <th>Agent</th>
+            <th>Model</th>
+            <th>Task</th>
+            <th class="num">Cost</th>
+            <th class="num">Tokens</th>
+            <th>Result</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>2026-04-18T00:00:00</td><td><code style="color:var(--accent)">ADV-009</code></td><td>canary-implementer</td><td><span style="color:#5ab0ff">sonnet</span></td><td>-</td><td style="text-align:right">$0.0401</td><td style="text-align:right">13.3K</td><td>complete</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  
+
+</div><!-- /.page -->
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "event_type": "SubagentStop",
+  "timestamp": "2026-04-15T11:00:00Z",
+  "adventure_id": "ADV-010",
+  "agent": "planner",
+  "task": "ADV010-T003",
+  "model": "claude-sonnet-4-6",
+  "tokens_in": 20000,
+  "tokens_out": 3500,
+  "duration_ms": 90000,
+  "turns": 7,
+  "result": "ready",
+  "session_id": "sess-def456"
+}

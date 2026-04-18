@@ -1,0 +1,306 @@
+---
+adventure_id: ADV-010
+total_tokens_in: 0
+total_tokens_out: 0
+total_duration: 0
+total_cost: 0.00
+agent_runs: 0
+---
+
+## Agent Runs
+
+| Agent | Task | Model | Tokens In | Tokens Out | Duration | Turns | Result |
+|-------|------|-------|-----------|------------|----------|-------|--------|
+| knowledge-extractor | ADV-010 | sonnet | 18500 | 1200 | 90s | 12 | complete |
+| adventure-planner | - | opus | ~45000 | ~14000 | ~15min | 1 | complete |
+| planner | ADV010-T001 | opus | 18000 | 3500 | 120s | 8 | ready |
+| planner | ADV010-T006 | opus | 22000 | 4000 | 90s | 6 | ready |
+| planner | ADV010-T002 | opus | 20000 | 3500 | 75s | 7 | ready |
+| planner | ADV010-T005 | opus | 22000 | 4500 | 90s | 7 | ready |
+| planner | ADV010-T004 | opus | 20000 | 4000 | 90s | 7 | ready |
+| planner | ADV010-T003 | opus | 20000 | 3500 | 90s | 7 | ready |
+| planner | ADV010-T008 | opus | 16000 | 3000 | 60s | 5 | ready |
+| planner | ADV010-T010 | opus | 18000 | 3500 | 75s | 6 | ready |
+| planner | ADV010-T007 | opus | 25000 | 4500 | 90s | 8 | ready |
+| planner | ADV010-T009 | opus | 22000 | 4000 | 90s | 7 | ready |
+| planner | ADV010-T012 | opus | 22000 | 4000 | 90s | 7 | ready |
+| planner | ADV010-T011 | opus | 25000 | 5000 | 120s | 8 | ready |
+| planner | ADV010-T013 | opus | 28000 | 4500 | 90s | 7 | ready |
+| planner | ADV010-T017 | opus | 18000 | 3500 | 60s | 6 | ready |
+| planner | ADV010-T018 | opus | 20000 | 4000 | 90s | 7 | ready |
+| planner | ADV010-T015 | opus | 20000 | 4000 | 90s | 7 | ready |
+| planner | ADV010-T014 | opus | 22000 | 4000 | 90s | 8 | ready |
+| planner | ADV010-T016 | opus | 25000 | 5000 | 120s | 8 | ready |
+| implementer | ADV010-T002 | sonnet | 18000 | 2000 | 8min | 6 | done |
+| implementer | ADV010-T001 | sonnet | 28000 | 3200 | 18min | 22 | done |
+| implementer | ADV010-T003 | sonnet | 28000 | 4500 | 8min | 12 | ready |
+| implementer | ADV010-T004 | sonnet | 22000 | 4200 | 10min | 14 | ready |
+| implementer | ADV010-T005 | sonnet | 32000 | 3800 | 15min | 18 | done |
+| implementer | ADV010-T006 | sonnet | 18500 | 3200 | 25min | 12 | done |
+| implementer | ADV010-T015 | sonnet | 18000 | 2800 | 12min | 14 | done |
+| implementer | ADV010-T011 | sonnet | ~70000 | ~4500 | 20min | 18 | done |
+| implementer | ADV010-T012 | sonnet | 52000 | 5800 | 25min | 28 | done |
+| implementer | ADV010-T007 | sonnet | 62000 | 4800 | 30min | 22 | done |
+| implementer | ADV010-T009 | sonnet | 45000 | 4800 | 18min | 16 | done |
+| implementer | ADV010-T008 | sonnet | 8200 | 650 | 6min | 8 | done |
+| 9e3367395ce6 | 2026-04-18T12:00:00Z | implementer | ADV010-T010 | sonnet | 1000 | 500 | 60 | 5 | 0.0045 | done | high |
+| 119712970aed | 2026-04-18T12:01:00Z | implementer | - | sonnet | 500 | 200 | 30 | 3 | 0.0021 | done | high |
+| implementer | ADV010-T010 | sonnet | 18000 | 800 | 8min | 12 | done |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| implementer | ADV010-T017 | sonnet | 8500 | 1200 | 4min | 8 | done |
+| implementer | ADV010-T013 | sonnet | 45000 | 3500 | 15min | 18 | done |
+| implementer | ADV010-T013 | sonnet | 45000 | 3500 | 900 | 18 | 0.1455 | done | ready |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| implementer | ADV010-T014 | sonnet | ~15000 | ~1000 | 15min | 10 | done |
+| implementer | ADV010-T018 | sonnet | 42000 | 1800 | 8min | 12 | done |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| adventure-task-reviewer | ADV010-T001 | sonnet | ~8000 | ~1200 | 3min | 6 | passed |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| adventure-task-reviewer | ADV010-T004 | sonnet | 12000 | 2000 | 3min | 8 | passed |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| adventure-task-reviewer | ADV010-T003 | sonnet | 18000 | 2000 | 4min | 8 | passed |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| adventure-task-reviewer | ADV010-T005 | sonnet | 18000 | 1200 | 3min | 8 | passed |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| adventure-task-reviewer | ADV010-T018 | sonnet | 18000 | 800 | 2min | 8 | passed |
+| adventure-task-reviewer | ADV010-T007 | sonnet | 18000 | 1200 | 3min | 8 | passed |
+| adventure-task-reviewer | ADV010-T009 | sonnet | 12000 | 1800 | 90s | 8 | passed |
+| adventure-task-reviewer | ADV010-T006 | sonnet | 18000 | 2500 | 4min | 12 | passed |
+| adventure-task-reviewer | ADV010-T002 | sonnet | 18000 | 1200 | 4min | 12 | passed |
+| adventure-task-reviewer | ADV010-T010 | sonnet | 12000 | 2000 | 4min | 10 | passed |
+| adventure-task-reviewer | ADV010-T008 | sonnet | 8500 | 1200 | 4min | 12 | passed |
+| adventure-task-reviewer | ADV010-T012 | sonnet | 28000 | 4200 | 4min | 12 | passed |
+| adventure-task-reviewer | ADV010-T017 | sonnet | 8000 | 600 | 3min | 8 | passed |
+| adventure-task-reviewer | ADV010-T014 | sonnet | 8000 | 600 | 3min | 8 | passed |
+| adventure-task-reviewer | ADV010-T015 | sonnet | 18000 | 2500 | 3min | 8 | passed |
+| adventure-task-reviewer | ADV010-T016 | sonnet | 18000 | 2000 | 4min | 8 | passed |
+| adventure-task-reviewer | ADV010-T011 | sonnet | 28000 | 3500 | 8min | 12 | failed |
+| adventure-task-reviewer | ADV010-T013 | sonnet | 12000 | 1800 | 3.5min | 8 | passed |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |
+| 6be12a81e55f | 2026-04-15T10:30:00Z | coder | ADV010-T005 | opus | 85000 | 28000 | 720 | 12 | 1.6950 | done | high |

@@ -1,0 +1,345 @@
+import stdlib.types
+
+// ============================================================
+// adventure.ark — Core entity declarations for the agent pipeline
+// domain.
+//
+// Entities declared here:
+//   Enums:
+//     - State          — adventure lifecycle state
+//     - Status         — task lifecycle status
+//     - TCStatus       — target condition proof status
+//     - ProofMethod    — how a TC is proved
+//     - DecisionKind   — kind of pipeline decision
+//     - DocKind        — kind of document artifact
+//     - PermCategory   — permission category
+//
+//   Abstractions:
+//     - Adventure      — top-level adventure container
+//     - Task           — work unit abstraction
+//     - Document       — document artifact abstraction
+//
+//   Classes:
+//     - Phase          — named phase grouping waves
+//     - Wave           — ordered set of tasks in a phase
+//     - Design         — design document subtype
+//     - Plan           — plan document subtype
+//     - Research       — research document subtype
+//     - Review         — review document subtype
+//     - TargetCondition — verifiable acceptance criterion
+//     - Decision       — pipeline routing decision record
+//     - Permission     — agent capability grant
+//     - Agent          — pipeline actor with a role
+//     - Role           — named capability set
+//
+// List-of-id fields are typed as String (JSON-serialised array)
+// per the repos_json: String = "[]" precedent in task.ark.
+// Cross-file unification is handled by the IR extractor (T016).
+// ============================================================
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum State {
+    concept,
+    planning,
+    review,
+    active,
+    blocked,
+    completed,
+    cancelled
+}
+
+enum Status {
+    pending,
+    in_progress,
+    passed,
+    failed,
+    done
+}
+
+enum TCStatus {
+    pending,
+    passed,
+    failed
+}
+
+enum ProofMethod {
+    autotest,
+    poc,
+    manual
+}
+
+enum DecisionKind {
+    approve_permissions,
+    approve_design,
+    state_transition,
+    knowledge_suggestion
+}
+
+enum DocKind {
+    design,
+    plan,
+    research,
+    review
+}
+
+enum PermCategory {
+    shell,
+    file,
+    mcp,
+    external
+}
+
+// ============================================================
+// ADVENTURE — top-level adventure container abstraction
+//
+// List-typed fields (tasks, documents, decisions, tcs, phases)
+// are encoded as JSON strings; IR extractor fans them out at
+// extraction time (same pattern as Task.repos_json in team/task.ark).
+// ============================================================
+
+abstraction Adventure {
+    $data id:         String = ""
+    $data title:      String = ""
+    $data state:      State  = concept
+
+    // JSON-encoded list of Task ids
+    $data tasks:      String = "[]"
+    // JSON-encoded list of Document ids
+    $data documents:  String = "[]"
+    // JSON-encoded list of Decision ids
+    $data decisions:  String = "[]"
+    // JSON-encoded list of TargetCondition ids
+    $data tcs:        String = "[]"
+    // JSON-encoded list of Phase names
+    $data phases:     String = "[]"
+
+    @in  { event: String }
+    @out[] { }
+
+    invariant: true
+
+    #process[strategy: code] {
+        description: "Adventure lifecycle — transitions state through concept/planning/review/active/blocked/completed/cancelled"
+    }
+
+    temporal: □((state == completed) → □(state == completed))
+    temporal: □((state == cancelled) → □(state == cancelled))
+}
+
+// ============================================================
+// PHASE — named phase grouping waves
+// ============================================================
+
+class Phase {
+    $data name:  String = ""
+    // JSON-encoded list of Wave indices
+    $data waves: String = "[]"
+
+    #process[strategy: code] {
+        description: "Phase groups waves; no autonomous state transitions"
+    }
+}
+
+// ============================================================
+// WAVE — ordered set of tasks within a phase
+// ============================================================
+
+class Wave {
+    $data index: Int    = 0
+    // JSON-encoded list of Task ids
+    $data tasks: String = "[]"
+
+    #process[strategy: code] {
+        description: "Wave holds an ordered set of tasks at a given index within a phase"
+    }
+
+    invariant: index >= 0
+}
+
+// ============================================================
+// TASK — work unit abstraction
+//
+// depends_on, target_conditions, and files are JSON-encoded
+// lists of ids / paths (same pattern as repos_json in task.ark).
+// ============================================================
+
+abstraction Task {
+    $data id:                String = ""
+    $data title:             String = ""
+    $data status:            Status = pending
+    // JSON-encoded list of Task ids this task depends on
+    $data depends_on:        String = "[]"
+    // JSON-encoded list of TargetCondition ids
+    $data target_conditions: String = "[]"
+    // JSON-encoded list of file paths
+    $data files:             String = "[]"
+    // Assigned role name
+    $data role:              String = ""
+
+    @in  { request: String }
+    @out[] { }
+
+    invariant: true
+
+    #process[strategy: code] {
+        description: "Task lifecycle managed by TaskLifecycle state machine in pipeline.ark"
+    }
+
+    temporal: □((status == done) → □(status == done))
+}
+
+// ============================================================
+// DOCUMENT — abstract base for document artifacts
+// ============================================================
+
+abstraction Document {
+    $data id:   String  = ""
+    $data path: String  = ""
+    $data kind: DocKind = design
+
+    @in  { }
+    @out[] { }
+
+    invariant: true
+
+    #process[strategy: code] {
+        description: "Document is an immutable artifact; IR extractor dispatches on kind"
+    }
+}
+
+// ============================================================
+// DOCUMENT SUBTYPES
+// Each re-declares kind with a fixed default so the IR
+// extractor can dispatch via ast["kind"] without reflection
+// (mirrors the ExtrudeOp/SplitOp pattern in operations.ark).
+// ============================================================
+
+class Design : Document {
+    $data id:   String  = ""
+    $data path: String  = ""
+    $data kind: DocKind = design
+
+    #process[strategy: code] {
+        description: "Design document artifact — architecture decisions, entity shapes"
+    }
+}
+
+class Plan : Document {
+    $data id:   String  = ""
+    $data path: String  = ""
+    $data kind: DocKind = plan
+
+    #process[strategy: code] {
+        description: "Plan document artifact — ordered task sequence with milestones"
+    }
+}
+
+class Research : Document {
+    $data id:   String  = ""
+    $data path: String  = ""
+    $data kind: DocKind = research
+
+    #process[strategy: code] {
+        description: "Research document artifact — feasibility studies, spike results"
+    }
+}
+
+class Review : Document {
+    $data id:      String  = ""
+    $data path:    String  = ""
+    $data kind:    DocKind = review
+    $data verdict: String  = "pending"
+
+    #process[strategy: code] {
+        description: "Review document artifact — code-review or QA report"
+    }
+}
+
+// ============================================================
+// TARGETCONDITION — verifiable acceptance criterion
+//
+// tasks is a JSON-encoded list of Task ids that prove this TC.
+// ============================================================
+
+class TargetCondition {
+    $data id:            String      = ""
+    $data description:   String      = ""
+    $data proof_method:  ProofMethod = manual
+    $data proof_command: String      = ""
+    $data status:        TCStatus    = pending
+    $data source:        String      = ""
+    $data design:        String      = ""
+    $data plan:          String      = ""
+    // JSON-encoded list of Task ids
+    $data tasks:         String      = "[]"
+
+    #process[strategy: code] {
+        description: "TC status advances from pending to passed/failed when proof_command passes/fails"
+    }
+}
+
+// ============================================================
+// DECISION — pipeline routing decision record
+// ============================================================
+
+class Decision {
+    $data kind:       DecisionKind = approve_design
+    $data label:      String       = ""
+    $data state_hint: String       = ""
+    $data route:      String       = ""
+
+    #process[strategy: code] {
+        description: "Decision records a routing choice; immutable once created"
+    }
+}
+
+// ============================================================
+// PERMISSION — agent capability grant
+//
+// tasks is a JSON-encoded list of Task ids this permission covers.
+// ============================================================
+
+class Permission {
+    $data category: PermCategory = shell
+    $data agent:    String       = ""
+    $data scope:    String       = ""
+    $data reason:   String       = ""
+    // JSON-encoded list of Task ids
+    $data tasks:    String       = "[]"
+
+    #process[strategy: code] {
+        description: "Permission grants an agent a scoped capability for a set of tasks"
+    }
+}
+
+// ============================================================
+// AGENT — pipeline actor with a role
+//
+// permissions is a JSON-encoded list of Permission ids.
+// ============================================================
+
+class Agent {
+    $data name:        String = ""
+    $data role:        String = ""
+    // JSON-encoded list of Permission ids
+    $data permissions: String = "[]"
+
+    #process[strategy: code] {
+        description: "Agent is a named actor executing tasks within a granted role"
+    }
+}
+
+// ============================================================
+// ROLE — named capability set
+// ============================================================
+
+class Role {
+    $data name: String = ""
+
+    #process[strategy: code] {
+        description: "Role is a named capability set assigned to agents"
+    }
+}

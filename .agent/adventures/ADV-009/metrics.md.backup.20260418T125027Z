@@ -1,0 +1,70 @@
+---
+adventure_id: ADV-009
+total_tokens_in: 0
+total_tokens_out: 0
+total_duration: 0
+total_cost: 0.00
+agent_runs: 0
+---
+
+## Agent Runs
+
+| Agent | Task | Model | Tokens In | Tokens Out | Duration | Turns | Result |
+|-------|------|-------|-----------|------------|----------|-------|--------|
+| adventure-planner | - | opus | ~48000 | ~14000 | ~12min | 1 | complete |
+| adventure-planner | addendum | opus | ~32000 | ~11000 | ~6min | 1 | complete |
+| planner | ADV009-T004 | opus | ~14000 | ~3200 | ~3min | 1 | ready |
+| planner | ADV009-T001 | opus | ~18000 | ~3800 | ~3min | 1 | ready |
+| planner | ADV009-T013 | opus | ~18000 | ~3500 | ~4min | 1 | ready |
+| planner | ADV009-T003 | opus | ~16000 | ~4000 | ~4min | 1 | ready |
+| planner | ADV009-T020 | opus | ~18000 | ~3200 | ~4min | 1 | ready |
+| planner | ADV009-T009 | opus | ~22000 | ~5200 | ~5min | 1 | ready |
+| planner | ADV009-T011 | opus | ~19000 | ~4200 | ~4min | 1 | ready |
+| planner | ADV009-T006 | opus | ~25000 | ~4800 | ~5min | 1 | ready |
+| planner | ADV009-T018 | opus | ~24000 | ~4800 | ~4min | 1 | ready |
+| planner | ADV009-T012 | opus | ~26000 | ~5400 | ~5min | 1 | ready |
+| planner | ADV009-T017 | opus | ~22000 | ~4200 | ~4min | 1 | ready |
+| planner | ADV009-T016 | opus | ~28000 | ~5600 | ~5min | 1 | ready |
+| planner | ADV009-T019 | opus | ~30000 | ~6200 | ~5min | 1 | ready |
+| planner | ADV009-T005 | opus | ~17000 | ~4600 | ~4min | 1 | ready |
+| planner | ADV009-T021 | opus | ~45000 | ~7000 | ~4min | 1 | ready |
+| planner | ADV009-T015 | opus | ~42000 | ~6500 | ~5min | 1 | ready |
+| planner | ADV009-T010 | opus | ~22000 | ~4500 | ~4min | 1 | ready |
+| implementer | ADV009-T001 | sonnet | ~45000 | ~4000 | ~8min | 6 | done |
+| implementer | ADV009-T002 | sonnet | ~35000 | ~5000 | ~10min | 8 | done |
+| implementer | ADV009-T003 | sonnet | ~40000 | ~5500 | ~8min | 7 | done |
+| implementer | ADV009-T004 | sonnet | ~30000 | ~4000 | ~8min | 5 | done |
+| implementer | ADV009-T005 | sonnet | ~22000 | ~3500 | ~5min | 4 | done |
+| implementer | ADV009-T006 | sonnet | ~55000 | ~5500 | ~10min | 12 | done |
+| implementer | ADV009-T007 | sonnet | ~48000 | ~5000 | ~8min | 8 | done |
+| implementer | ADV009-T008 | sonnet | ~75000 | ~6500 | ~12min | 9 | done |
+| implementer | ADV009-T009 | sonnet | ~90000 | ~7000 | ~15min | 10 | done |
+| implementer | ADV009-T010 | sonnet | ~62000 | ~5500 | ~10min | 8 | done |
+| implementer | ADV009-T011 | sonnet | ~28000 | ~3000 | ~8min | 6 | done |
+| implementer | ADV009-T014 | sonnet | ~18000 | ~2000 | ~4min | 4 | ready |
+| implementer | ADV009-T012 | sonnet | ~85000 | ~7500 | ~15min | 12 | done |
+| implementer | ADV009-T013 | sonnet | ~42000 | ~4500 | ~10min | 8 | done |
+| implementer | ADV009-T015 | sonnet | ~55000 | ~6500 | ~20min | 12 | ready |
+| implementer | ADV009-T017 | sonnet | ~38000 | ~4500 | ~8min | 10 | done |
+| implementer | ADV009-T016 | sonnet | ~52000 | ~5500 | ~10min | 8 | done |
+| implementer | ADV009-T018 | sonnet | ~68000 | ~6500 | ~12min | 10 | ready |
+| implementer | ADV009-T019 | sonnet | ~95000 | ~8000 | ~15min | 12 | done |
+| implementer | ADV009-T020 | sonnet | ~72000 | ~5500 | ~12min | 8 | done |
+| adventure-task-reviewer | ADV009-T002 | sonnet | 18000 | 4000 | 4min | 12 | passed |
+| adventure-task-reviewer | ADV009-T001 | sonnet | 18500 | 1200 | 4min | 8 | passed |
+| adventure-task-reviewer | ADV009-T005 | sonnet | 18000 | 3500 | 4min | 8 | passed |
+| adventure-task-reviewer | ADV009-T003 | sonnet | 35000 | 4000 | 4min | 12 | passed |
+| adventure-task-reviewer | ADV009-T004 | sonnet | 45000 | 8000 | 4m | 12 | passed |
+| adventure-task-reviewer | ADV009-T014 | sonnet | 18000 | 3200 | 4min | 12 | passed |
+| adventure-task-reviewer | ADV009-T017 | sonnet | 18500 | 1200 | 4m | 12 | passed |
+| adventure-task-reviewer | ADV009-T016 | sonnet | 28000 | 4000 | 3min | 12 | passed |
+| adventure-task-reviewer | ADV009-T018 | sonnet | 12000 | 3500 | 4min | 12 | passed |
+| adventure-task-reviewer | ADV009-T015 | sonnet | 42000 | 3500 | 4min | 12 | passed |
+| adventure-task-reviewer | ADV009-T021 | sonnet | 42000 | 3500 | 90s | 12 | passed |
+| adventure-task-reviewer | ADV009-T013 | sonnet | 12000 | 3000 | 4min | 12 | passed |
+| adventure-task-reviewer | ADV009-T012 | sonnet | 45000 | 8000 | 8min | 18 | passed |
+| adventure-task-reviewer | ADV009-T008 | sonnet | 45000 | 4500 | 4min | 12 | passed |
+| adventure-task-reviewer | ADV009-T011 | sonnet | 12000 | 2500 | 2min | 8 | passed |
+| adventure-task-reviewer | ADV009-T006 | sonnet | 28000 | 4000 | 3min | 12 | passed |
+| adventure-reviewer | ADV-009 | opus | 85000 | 9500 | 6min | 14 | complete |
+| knowledge-extractor | ADV-009 | sonnet | ~12000 | ~1800 | ~3min | 8 | complete |

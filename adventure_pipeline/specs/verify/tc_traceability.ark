@@ -1,0 +1,62 @@
+import stdlib.types
+
+// ============================================================
+// verify/tc_traceability.ark — Verification spec for
+// target condition traceability invariants.
+//
+// Intended checks (see README "Deferred invariants"):
+//   - tc_has_tasks: every TargetCondition references at least
+//     one Task id in its tasks JSON list.
+//   - task_has_tc: every Task references at least one
+//     TargetCondition id in its target_conditions JSON list.
+//
+// NOTE: Full referential integrity checks (verifying that
+// referenced ids exist in the respective entity sets) require
+// cross-entity existential quantification that is not
+// expressible in the vanilla Ark verify block grammar.
+// Approximated intra-entity checks are provided here;
+// full checks are deferred to a Python post-IR pass in T017.
+// See README "Deferred invariants".
+//
+// Minimal stubs for TargetCondition and Task re-declared here
+// so this file parses as a standalone Ark unit.
+// ============================================================
+
+enum TCStatus {
+    pending,
+    passed,
+    failed
+}
+
+class TargetCondition {
+    $data id:     String   = ""
+    $data tasks:  String   = "[]"
+    $data status: TCStatus = pending
+
+    #process[strategy: code] {
+        description: "TargetCondition stub for tc_traceability verify block"
+    }
+}
+
+class Task {
+    $data id:                String = ""
+    $data target_conditions: String = "[]"
+
+    #process[strategy: code] {
+        description: "Task stub for tc_traceability verify block"
+    }
+}
+
+// Approximated intra-entity checks — referential integrity deferred to T017.
+// See README "Deferred invariants" for rationale.
+verify TargetCondition {
+    check tc_has_tasks:
+        for_all TargetCondition as tc:
+            tc.tasks != "[]" or tc.id == ""
+}
+
+verify Task {
+    check task_has_tc:
+        for_all Task as t:
+            t.target_conditions != "[]" or t.id == ""
+}

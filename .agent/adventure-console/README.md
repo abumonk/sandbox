@@ -21,27 +21,23 @@ Open the URL in any modern browser.
 
 ## What it does
 
-**Sidebar** — lists every `ADV-###` under `.agent/adventures/` with a colored
-state badge.
+**Sidebar** — each row shows a colored state badge + ID + title + one-line
+subtitle (first sentence of the concept, truncated to ~80 chars). No task
+counts, no file counts — those are one click away in the Overview tab.
 
 **Main pane — tabs per adventure:**
 
 | Tab | Purpose |
 |-----|---------|
-| Overview | Concept, target-conditions table, state-transition buttons |
-| Designs | Browse + render `designs/*.md`; per-file **Approve** button |
-| Plans | Browse + render `plans/*.md` |
-| Tasks | Sortable task list; click a row to read the full task file |
-| Permissions | Show `permissions.md`; **Approve Permissions** button toggles status |
-| Reviews | Task-level reviews + the synthesis `adventure-report.md` |
-| Knowledge | Parses Section 6 of the adventure report — check suggestions, click **Record Selection** to save `knowledge-selection.json` |
-| Research | `research/*.md` browser |
-| Log | Tail of `adventure.log` |
+| Overview | Concept synopsis, target-condition progress bar, next-action card |
+| Tasks | Grouped-by-status task cards; click to open the full task file |
+| Documents | Unified browser for designs / plans / research / reviews with type-filter chips |
+| Decisions | Pending approvals, state-transition controls, permissions status, knowledge-suggestion curation |
 
-**State transitions** — the header shows the buttons valid for the current
-state (e.g. `active → blocked / completed / cancelled`). Each click hits
-`POST /api/adventures/{id}/state` which updates the manifest and appends a
-line to `adventure.log`.
+**State transitions** — controls for transitioning the adventure state
+(e.g. `active → blocked / completed / cancelled`) live inside the
+**Decisions** tab. Each click hits `POST /api/adventures/{id}/state` which
+updates the manifest and appends a line to `adventure.log`.
 
 ## How the backend works
 
@@ -53,6 +49,7 @@ a small REST-ish API:
 |--------|------|------|--------|
 | GET | `/api/adventures` | — | Summary list |
 | GET | `/api/adventures/{id}` | — | Full bundle |
+| GET | `/api/adventures/{id}/documents` | — | Unified list of designs/plans/research/reviews with lightweight metadata |
 | GET | `/api/file?path=<rel>` | — | Raw file text (guarded to repo-root) |
 | POST | `/api/adventures/{id}/state` | `{new_state}` | Update manifest `state:` + log |
 | POST | `/api/adventures/{id}/permissions/approve` | — | Set `permissions.md` `status: approved` + log |
@@ -60,9 +57,14 @@ a small REST-ish API:
 | POST | `/api/adventures/{id}/knowledge/apply` | `{indices: [int]}` | Write `reviews/knowledge-selection.json` |
 | POST | `/api/adventures/{id}/log` | `{message}` | Append free-form log entry |
 
+`GET /api/adventures/{id}` also returns a derived `summary` block with
+`tc_total`, `tc_passed`, `tc_failed`, `tc_pending`, `tasks_by_status`, and a
+`next_action` hint (`kind`, `label`, `state_hint`). These values are computed
+on every request; nothing new is persisted to disk.
+
 ## Knowledge extraction
 
-The **Knowledge** tab parses the `## 6. Knowledge Extraction Suggestions`
+The **Decisions** tab parses the `## 6. Knowledge Extraction Suggestions`
 section of `reviews/adventure-report.md` and renders each `### Suggestion N`
 block as a checkbox.
 

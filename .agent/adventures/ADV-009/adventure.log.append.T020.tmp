@@ -1,0 +1,6 @@
+[2026-04-15T00:06:00Z] planner | "spawn: ADV009-T020 planning"
+[2026-04-15T00:06:05Z] planner | "step 1/4: read task, plan-graph-view-and-editing, design-graph-edit-affordances"
+[2026-04-15T00:06:10Z] planner | "step 2/4: explored index.html — confirmed API helpers (setState/approvePerm/approveDes/applyKB), toast(), h(), post()"
+[2026-04-15T00:06:15Z] planner | "step 3/4: wrote .agent/designs/ADV009-T020-design.md — 1 target file (index.html), 7 implementation steps"
+[2026-04-15T00:06:20Z] planner | "step 4/4: updated task — 4 acceptance criteria, stage planning->ready"
+[2026-04-15T00:06:25Z] planner | "complete: design ready, edit affordances layered over T019 canvas via cy event handlers + DOM menu"
